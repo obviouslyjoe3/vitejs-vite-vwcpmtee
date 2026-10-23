@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { socket } from './socket.js';
 import { loadReadMap, saveReadMap } from './prefs.js';
 
-const SESSION_KEY = 'parley:session';
+const TOKEN_KEY = 'parley:token';
 const TYPING_MS = 3000;
 
 export const dmId = (a, b) => 'dm:' + [a, b].sort().join('|');
@@ -14,17 +14,18 @@ export function uid() {
   );
 }
 
-const readSession = () => {
+// The sign-in token lives in localStorage so every tab (and a reload) stays signed in.
+const readToken = () => {
   try {
-    return JSON.parse(sessionStorage.getItem(SESSION_KEY));
+    return localStorage.getItem(TOKEN_KEY) || null;
   } catch {
     return null;
   }
 };
-const writeSession = (value) => {
+const writeToken = (value) => {
   try {
-    if (value) sessionStorage.setItem(SESSION_KEY, JSON.stringify(value));
-    else sessionStorage.removeItem(SESSION_KEY);
+    if (value) localStorage.setItem(TOKEN_KEY, value);
+    else localStorage.removeItem(TOKEN_KEY);
   } catch {}
 };
 
@@ -48,6 +49,9 @@ const initial = {
   me: null,
   rooms: [],
   users: [],
+  friends: [], // user ids
+  incoming: [], // ids of people who asked to be your friend
+  outgoing: [], // ids of people you asked
   messages: {}, // conversationId -> message[]
   unread: {},
   lastRead: {}, // conversationId -> ts of newest message seen
@@ -68,7 +72,23 @@ function reducer(s, a) {
     case 'error':
       return { ...s, error: a.error };
     case 'reset':
-      return { ...initial, status: s.status };
+      return { ...initial, status: s.status, error: a.error || '' };
+    case 'friends':
+      return { ...s, friends: a.friends, incoming: a.incoming, outgoing: a.outgoing };
+    case 'userUpdate': {
+      const exists = s.users.some((u) => u.id === a.user.id);
+      return {
+        ...s,
+        users: exists ? s.users.map((u) => (u.id === a.user.id ? a.user : u)) : [...s.users, a.user],
+        me: s.me && s.me.id === a.user.id ? a.user : s.me,
+      };
+    }
+    case 'history': {
+      // messages of a room you just joined (or were added to): all of it counts as read
+      const lastRead = { ...s.lastRead };
+      for (const [conv, list] of Object.entries(a.history)) lastRead[conv] = newestTs(list);
+      return { ...s, messages: { ...s.messages, ...a.history }, lastRead };
+    }
     case 'init': {
       const back = a.preferred;
       const valid =
@@ -91,6 +111,9 @@ function reducer(s, a) {
         me: a.me,
         rooms: a.rooms,
         users: a.users,
+        friends: a.friends?.friends || [],
+        incoming: a.friends?.incoming || [],
+        outgoing: a.friends?.outgoing || [],
         messages: a.history,
         active,
         unread,
@@ -206,38 +229,57 @@ function reducer(s, a) {
   }
 }
 
-export function useParley({ onIncoming } = {}) {
+const ask = (event, payload) =>
+  new Promise((resolve) => socket.emit(event, payload, (res) => resolve(res || {})));
+
+export function useParley({ onIncoming, onFriendRequest } = {}) {
   const [state, dispatch] = useReducer(reducer, initial);
-  const sessionRef = useRef(readSession());
+  const tokenRef = useRef(readToken());
   const incomingRef = useRef(onIncoming);
   incomingRef.current = onIncoming;
+  const friendRef = useRef(onFriendRequest);
+  friendRef.current = onFriendRequest;
 
-  const hello = useCallback((name) => {
-    socket.emit('hello', { id: sessionRef.current?.id, name }, (res) => {
-      if (res?.error) {
-        sessionRef.current = null;
-        writeSession(null);
-        dispatch({ type: 'error', error: res.error });
-        return;
-      }
-      sessionRef.current = { id: res.user.id, name: res.user.name };
-      writeSession(sessionRef.current);
-      dispatch({
-        type: 'init',
-        me: res.user,
-        rooms: res.rooms,
-        users: res.users,
-        history: res.history,
-        readMap: loadReadMap(res.user.id),
-        preferred: readActive(),
-      });
+  // Everything the server sends when you sign in, register or resume
+  const start = useCallback((res) => {
+    if (res.token) {
+      tokenRef.current = res.token;
+      writeToken(res.token);
+    }
+    dispatch({
+      type: 'init',
+      me: res.user,
+      rooms: res.rooms,
+      users: res.users,
+      history: res.history,
+      friends: res.friends,
+      readMap: loadReadMap(res.user.id),
+      preferred: readActive(),
     });
   }, []);
+
+  const signedOut = useCallback((error = '') => {
+    tokenRef.current = null;
+    writeToken(null);
+    writeActive(null);
+    dispatch({ type: 'reset', error });
+  }, []);
+
+  const resume = useCallback(() => {
+    if (!tokenRef.current) return;
+    socket.emit('auth:resume', { token: tokenRef.current }, (res) => {
+      if (res?.error) {
+        if (res.expired) signedOut(res.error);
+        return;
+      }
+      start(res);
+    });
+  }, [start, signedOut]);
 
   useEffect(() => {
     const onConnect = () => {
       dispatch({ type: 'status', status: 'connected' });
-      if (sessionRef.current?.name) hello(sessionRef.current.name);
+      resume();
     };
     const onOffline = () => dispatch({ type: 'status', status: 'offline' });
 
@@ -245,6 +287,10 @@ export function useParley({ onIncoming } = {}) {
     socket.on('disconnect', onOffline);
     socket.on('connect_error', onOffline);
     socket.on('users', (users) => dispatch({ type: 'users', users }));
+    socket.on('user:update', (user) => dispatch({ type: 'userUpdate', user }));
+    socket.on('friends', (f) => dispatch({ type: 'friends', ...f }));
+    socket.on('friend:incoming', (info) => friendRef.current?.(info));
+    socket.on('history', (history) => dispatch({ type: 'history', history }));
     socket.on('room:new', (room) => dispatch({ type: 'roomNew', room }));
     socket.on('room:update', (room) => dispatch({ type: 'roomUpdate', room }));
     socket.on('room:remove', ({ id }) => dispatch({ type: 'roomRemove', id }));
@@ -254,6 +300,11 @@ export function useParley({ onIncoming } = {}) {
     });
     socket.on('message:update', (u) => dispatch({ type: 'msgUpdate', ...u }));
     socket.on('typing', ({ room, user }) => dispatch({ type: 'typing', room, userId: user.id }));
+    // the server ended this sign-in (logged out in another tab, or the password changed)
+    socket.on('auth:ended', () => {
+      signedOut('You were signed out.');
+      socket.connect();
+    });
 
     socket.connect();
     const tick = setInterval(() => dispatch({ type: 'tick' }), 1000);
@@ -263,7 +314,7 @@ export function useParley({ onIncoming } = {}) {
       socket.off();
       socket.disconnect();
     };
-  }, [hello]);
+  }, [resume, signedOut]);
 
   const me = state.me;
 
@@ -303,35 +354,48 @@ export function useParley({ onIncoming } = {}) {
     [me]
   );
 
-  const createRoom = useCallback(
-    (opts) =>
-      new Promise((resolve) => {
-        socket.emit('room:create', typeof opts === 'string' ? { name: opts } : opts, (res) => {
-          if (res?.room) {
-            dispatch({ type: 'roomNew', room: res.room });
-            dispatch({ type: 'active', id: res.room.id });
-          }
-          resolve(res || {});
-        });
-      }),
-    []
+  const createRoom = useCallback(async (opts) => {
+    const res = await ask('room:create', typeof opts === 'string' ? { name: opts } : opts);
+    if (res.room) {
+      dispatch({ type: 'roomNew', room: res.room });
+      dispatch({ type: 'active', id: res.room.id });
+    }
+    return res;
+  }, []);
+
+  const joinRoom = useCallback(async (id) => {
+    const res = await ask('room:join', { id });
+    if (res.room) {
+      dispatch({ type: 'roomNew', room: res.room });
+      dispatch({ type: 'roomUpdate', room: res.room });
+    }
+    return res;
+  }, []);
+
+  // Signing in, registering: resolve to { error } or {} (the 'init' dispatch does the rest)
+  const authenticate = useCallback(
+    async (event, payload) => {
+      dispatch({ type: 'error', error: '' });
+      const res = await ask(event, payload);
+      if (res.error) return { error: res.error };
+      start(res);
+      return {};
+    },
+    [start]
   );
 
   return {
     ...state,
-    restoring: !state.me && !!sessionRef.current,
-    join: (name) => {
-      dispatch({ type: 'error', error: '' });
-      hello(name);
-    },
-    leave: () => {
-      sessionRef.current = null;
-      writeSession(null);
-      writeActive(null);
-      dispatch({ type: 'reset' });
+    restoring: !state.me && !!tokenRef.current, // a saved sign-in is being picked back up
+    login: (username, password) => authenticate('auth:login', { username, password }),
+    register: (username, password) => authenticate('auth:register', { username, password }),
+    logout: async () => {
+      await ask('auth:logout');
+      signedOut();
       socket.disconnect();
       socket.connect();
     },
+    changePassword: (current, next) => ask('auth:password', { current, next }),
     setActive: (id) => dispatch({ type: 'active', id }),
     send,
     edit: (room, id, text) => socket.emit('message:edit', { room, id, text }),
@@ -342,19 +406,22 @@ export function useParley({ onIncoming } = {}) {
     updateStatus: (status) => socket.emit('profile:update', { status }),
     pin: (room, id) => socket.emit('message:pin', { room, id }),
     vote: (room, id, option) => socket.emit('poll:vote', { room, id, option }),
-    setTopic: (id, topic) =>
-      new Promise((resolve) => socket.emit('room:topic', { id, topic }, (res) => resolve(res || {}))),
+    setTopic: (id, topic) => ask('room:topic', { id, topic }),
     updateProfile: (patch) => socket.emit('profile:update', patch),
-    editRoom: (id, patch) =>
-      new Promise((resolve) => socket.emit('room:edit', { id, ...patch }, (res) => resolve(res || {}))),
-    deleteRoom: (id) =>
-      new Promise((resolve) => socket.emit('room:delete', { id }, (res) => resolve(res || {}))),
-    inviteToRoom: (id, ids) =>
-      new Promise((resolve) => socket.emit('room:invite', { id, ids }, (res) => resolve(res || {}))),
-    kickFromRoom: (id, userId) =>
-      new Promise((resolve) => socket.emit('room:kick', { id, userId }, (res) => resolve(res || {}))),
-    leaveRoom: (id) =>
-      new Promise((resolve) => socket.emit('room:leave', { id }, (res) => resolve(res || {}))),
+    editRoom: (id, patch) => ask('room:edit', { id, ...patch }),
+    deleteRoom: (id) => ask('room:delete', { id }),
+    inviteToRoom: (id, ids) => ask('room:invite', { id, ids }),
+    kickFromRoom: (id, userId) => ask('room:kick', { id, userId }),
+    unbanFromRoom: (id, userId) => ask('room:unban', { id, userId }),
+    leaveRoom: (id) => ask('room:leave', { id }),
+    browseRooms: (q) => ask('rooms:browse', { q }),
+    roomMembers: (id) => ask('room:members', { id }),
+    joinRoom,
+    friendRequest: (username) => ask('friend:request', { username }),
+    friendAccept: (id) => ask('friend:accept', { id }),
+    friendDecline: (id) => ask('friend:decline', { id }),
+    friendCancel: (id) => ask('friend:cancel', { id }),
+    friendRemove: (id) => ask('friend:remove', { id }),
     markAllRead: () => dispatch({ type: 'markAllRead' }),
     createRoom,
   };

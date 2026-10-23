@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import Icon from './Icon.jsx';
+import Emoji from '../Emoji.jsx';
 
 const ago = (ts) => {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -31,7 +32,7 @@ export function ProfileFacts({ user }) {
       {user.pronouns && <p className="pronouns">{user.pronouns}</p>}
       {user.status && (
         <p className="status-line">
-          {user.status.emoji} {user.status.text}
+          <Emoji char={user.status.emoji} /> {user.status.text}
         </p>
       )}
       {user.bio && <p className="bio">{user.bio}</p>}
@@ -44,7 +45,16 @@ export function ProfileFacts({ user }) {
   );
 }
 
-export default function ProfileCard({ user, me, onMessage, onEdit, onClose }) {
+// relation: 'friends' | 'incoming' (they asked you) | 'outgoing' (you asked them) | 'none'
+export default function ProfileCard({
+  user, me, relation, canMessage, onMessage, onEdit, onClose,
+  onAddFriend, onAccept, onDecline, onCancel, onRemove,
+}) {
+  const [error, setError] = useState('');
+  const act = async (fn) => {
+    const res = await fn(user);
+    setError(res?.error || '');
+  };
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -72,6 +82,7 @@ export default function ProfileCard({ user, me, onMessage, onEdit, onClose }) {
             {user.name}
             {mine && <small> (you)</small>}
           </h2>
+          {relation === 'friends' && <span className="friend-tag"><Icon name="check" size={12} /> Friends</span>}
           <p className="presence-line">
             {mine || user.online
               ? 'Online now'
@@ -97,10 +108,42 @@ export default function ProfileCard({ user, me, onMessage, onEdit, onClose }) {
               Edit profile
             </button>
           ) : (
-            <button className="primary" onClick={() => onMessage(user)}>
-              <Icon name="send" size={15} /> Message
-            </button>
+            <>
+              {canMessage && (
+                <button className="primary" onClick={() => onMessage(user)}>
+                  <Icon name="send" size={15} /> Message
+                </button>
+              )}
+              {relation === 'none' && (
+                <button className={canMessage ? 'secondary' : 'primary'} onClick={() => act(onAddFriend)}>
+                  <Icon name="userPlus" size={15} /> Add friend
+                </button>
+              )}
+              {relation === 'incoming' && (
+                <>
+                  <button className="primary" onClick={() => act(onAccept)}>Accept request</button>
+                  <button className="text-btn" onClick={() => act(onDecline)}>Decline</button>
+                </>
+              )}
+              {relation === 'outgoing' && (
+                <>
+                  <span className="pill-note">Request sent</span>
+                  <button className="text-btn" onClick={() => act(onCancel)}>Cancel</button>
+                </>
+              )}
+              {relation === 'friends' && (
+                <button
+                  className="text-btn danger-text"
+                  onClick={() => {
+                    if (window.confirm(`Remove ${user.name} from your friends?`)) act(onRemove);
+                  }}
+                >
+                  Remove friend
+                </button>
+              )}
+            </>
           )}
+          {error && <p className="form-error" role="alert">{error}</p>}
         </div>
       </div>
     </div>

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParley, dmId } from './useParley.js';
 import { loadPrefs, savePrefs, beep, showDesktop, askDesktopPermission } from './notify.js';
-import Join from './components/Join.jsx';
+import Auth from './components/Auth.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Thread from './components/Thread.jsx';
 import Settings from './components/Settings.jsx';
 import QuickSwitcher from './components/QuickSwitcher.jsx';
 import ProfileCard from './components/ProfileCard.jsx';
+import Friends from './components/Friends.jsx';
+import Discover from './components/Discover.jsx';
 import Logo from './components/Logo.jsx';
 import {
   loadAppearance, saveAppearance, applyAppearance,
@@ -30,7 +32,9 @@ export default function App() {
   const [prefs, setPrefs] = useState(loadPrefs);
   const [panel, setPanel] = useState(null); // null | 'info' | 'pins' | 'search'
   const [quickOpen, setQuickOpen] = useState(false);
-  const [profileId, setProfileId] = useState(null);
+  const [profileUser, setProfileUser] = useState(null);
+  const [friendsTab, setFriendsTab] = useState(null); // null | 'friends' | 'requests' | 'add'
+  const [discoverOpen, setDiscoverOpen] = useState(false);
   const [jump, setJump] = useState(null); // { conv, id }
   const [convPrefs, setConvPrefs] = useState({ starred: [], muted: [] });
   const [saved, setSaved] = useState([]);
@@ -56,7 +60,13 @@ export default function App() {
     }
   }, []);
 
-  const p = useParley({ onIncoming });
+  const onFriendRequest = useCallback((from) => {
+    const { prefs: pf } = live.current;
+    if (pf.sound) beep();
+    if (pf.desktop && document.hidden) showDesktop(from.name, 'Sent you a friend request');
+  }, []);
+
+  const p = useParley({ onIncoming, onFriendRequest });
   live.current = { me: p.me, active: p.active, prefs, muted: convPrefs.muted };
 
   // appearance: theme, accent, message style, text size
@@ -132,6 +142,22 @@ export default function App() {
     savePrefs(value);
   };
 
+  // People you can talk to: your friends, plus anyone you already have a DM with (read-only if no longer friends)
+  const friendSet = useMemo(() => new Set(p.friends), [p.friends]);
+  const people = useMemo(() => {
+    if (!p.me) return [];
+    const ids = new Set(p.friends);
+    for (const key of Object.keys(p.messages)) {
+      if (!key.startsWith('dm:')) continue;
+      for (const id of key.slice(3).split('|')) if (id !== p.me.id) ids.add(id);
+    }
+    return p.users.filter((u) => ids.has(u.id));
+  }, [p.me, p.friends, p.messages, p.users]);
+
+  const relationOf = (id) =>
+    friendSet.has(id) ? 'friends' : p.incoming.includes(id) ? 'incoming' : p.outgoing.includes(id) ? 'outgoing' : 'none';
+  const friendUsers = useMemo(() => p.users.filter((u) => friendSet.has(u.id)), [p.users, friendSet]);
+
   const conv = useMemo(() => {
     if (!p.me || !p.active) return null;
     if (p.active.startsWith('dm:')) {
@@ -148,15 +174,17 @@ export default function App() {
           ? `Last seen ${ago(user.lastSeen)}`
           : 'Offline',
         user,
+        closed: !friendSet.has(user.id),
       };
     }
     const room = p.rooms.find((r) => r.id === p.active);
     if (!room) return null;
+    const n = room.count ?? room.members?.length ?? 0;
     const subtitle = room.private
-      ? `Private group · ${room.members.length} ${room.members.length === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`
-      : room.topic;
+      ? `Private group · ${n} ${n === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`
+      : `${n} ${n === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`;
     return { id: room.id, kind: 'room', title: room.name, subtitle, topic: room.topic, room };
-  }, [p.me, p.active, p.users, p.rooms]);
+  }, [p.me, p.active, p.users, p.rooms, friendSet]);
 
   if (p.restoring) {
     return (
@@ -167,7 +195,7 @@ export default function App() {
     );
   }
 
-  if (!p.me) return <Join status={p.status} error={p.error} onJoin={p.join} />;
+  if (!p.me) return <Auth status={p.status} error={p.error} onLogin={p.login} onRegister={p.register} />;
 
   const typers = Object.keys(p.typing[p.active] || {})
     .filter((id) => id !== p.me.id)
@@ -181,6 +209,17 @@ export default function App() {
     setJump(messageId ? { conv: id, id: messageId } : null);
   };
 
+  const logout = async () => {
+    setSettingsOpen(false);
+    setFriendsTab(null);
+    setDiscoverOpen(false);
+    setProfileUser(null);
+    setQuickOpen(false);
+    setPanel(null);
+    setView('list');
+    await p.logout();
+  };
+
   const starred = convPrefs.starred.includes(p.active);
   const muted = convPrefs.muted.includes(p.active);
 
@@ -189,7 +228,9 @@ export default function App() {
       <Sidebar
         me={p.me}
         rooms={p.rooms}
-        users={p.users}
+        people={people}
+        friendIds={p.friends}
+        requestCount={p.incoming.length}
         messages={p.messages}
         unread={p.unread}
         active={p.active}
@@ -199,7 +240,9 @@ export default function App() {
         anyUnread={Object.values(p.unread).some((n) => n > 0)}
         onSelect={select}
         onCreateRoom={p.createRoom}
-        onLeave={p.leave}
+        onLogout={logout}
+        onOpenFriends={(tab) => setFriendsTab(tab)}
+        onOpenDiscover={() => setDiscoverOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onQuick={() => setQuickOpen(true)}
         onMarkAllRead={p.markAllRead}
@@ -209,6 +252,7 @@ export default function App() {
         conv={conv}
         me={p.me}
         users={p.users}
+        friendUsers={friendUsers}
         messages={p.messages[p.active] || []}
         typers={typers}
         offline={p.status !== 'connected'}
@@ -226,11 +270,14 @@ export default function App() {
         muted={muted}
         saved={saved}
         onSave={toggleSaved}
-        onProfile={(u) => setProfileId(u.id)}
+        onProfile={setProfileUser}
+        onAddFriend={(u) => p.friendRequest(u.name)}
         onEditRoom={p.editRoom}
         onDeleteRoom={p.deleteRoom}
         onInvite={p.inviteToRoom}
         onKick={p.kickFromRoom}
+        onUnban={p.unbanFromRoom}
+        onMembers={p.roomMembers}
         onLeaveRoom={p.leaveRoom}
         onOpenSaved={(item) => select(item.room, item.id)}
         onStar={() => togglePref('starred', p.active)}
@@ -254,26 +301,67 @@ export default function App() {
           onColor={p.updateColor}
           onStatus={p.updateStatus}
           onProfile={p.updateProfile}
+          onChangePassword={p.changePassword}
+          onLogout={logout}
           onPrefs={changePrefs}
           onClose={() => setSettingsOpen(false)}
         />
       )}
-      {profileId && (() => {
-        const person = p.users.find((u) => u.id === profileId);
-        if (!person) return null;
+      {friendsTab && (
+        <Friends
+          tab={friendsTab}
+          users={p.users}
+          friends={p.friends}
+          incoming={p.incoming}
+          outgoing={p.outgoing}
+          onRequest={p.friendRequest}
+          onAccept={p.friendAccept}
+          onDecline={p.friendDecline}
+          onCancel={p.friendCancel}
+          onRemove={p.friendRemove}
+          onProfile={(u) => setProfileUser(u)}
+          onMessage={(u) => {
+            setFriendsTab(null);
+            select(dmId(p.me.id, u.id));
+          }}
+          onClose={() => setFriendsTab(null)}
+        />
+      )}
+      {discoverOpen && (
+        <Discover
+          onBrowse={p.browseRooms}
+          onJoin={p.joinRoom}
+          onOpen={(id) => {
+            setDiscoverOpen(false);
+            select(id);
+          }}
+          onClose={() => setDiscoverOpen(false)}
+        />
+      )}
+      {profileUser && (() => {
+        const person = p.users.find((u) => u.id === profileUser.id) || profileUser;
+        const relation = relationOf(person.id);
+        const hasDm = !!p.messages[dmId(p.me.id, person.id)]?.length;
         return (
           <ProfileCard
             user={person}
             me={p.me}
-            onClose={() => setProfileId(null)}
+            relation={relation}
+            canMessage={relation === 'friends' || hasDm}
+            onClose={() => setProfileUser(null)}
             onMessage={(u) => {
-              setProfileId(null);
+              setProfileUser(null);
               select(dmId(p.me.id, u.id));
             }}
             onEdit={() => {
-              setProfileId(null);
+              setProfileUser(null);
               setSettingsOpen(true);
             }}
+            onAddFriend={(u) => p.friendRequest(u.name)}
+            onAccept={(u) => p.friendAccept(u.id)}
+            onDecline={(u) => p.friendDecline(u.id)}
+            onCancel={(u) => p.friendCancel(u.id)}
+            onRemove={(u) => p.friendRemove(u.id)}
           />
         );
       })()}
@@ -281,7 +369,7 @@ export default function App() {
         <QuickSwitcher
           me={p.me}
           rooms={p.rooms}
-          users={p.users}
+          users={people}
           messages={p.messages}
           onPick={select}
           onClose={() => setQuickOpen(false)}

@@ -6,6 +6,7 @@ import RoomGlyph from './RoomGlyph.jsx';
 import { GROUP_ICONS } from '../constants.js';
 import { dmId } from '../useParley.js';
 import { stripMarks } from '../richText.jsx';
+import Emoji from '../Emoji.jsx';
 
 const previewOf = (list, meId) => {
   const last = list?.[list.length - 1];
@@ -19,8 +20,8 @@ const previewOf = (list, meId) => {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
 
 export default function Sidebar({
-  me, rooms, users, messages, unread, active, status, starred, muted, anyUnread,
-  onSelect, onCreateRoom, onLeave, onOpenSettings, onQuick, onMarkAllRead,
+  me, rooms, people, friendIds, requestCount, messages, unread, active, status, starred, muted, anyUnread,
+  onSelect, onCreateRoom, onLogout, onOpenSettings, onQuick, onMarkAllRead, onOpenFriends, onOpenDiscover,
 }) {
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
@@ -35,12 +36,13 @@ export default function Sidebar({
     .filter((r) => r.name.includes(q))
     .map((r) => ({ kind: 'room', id: r.id, r, list: messages[r.id] }));
 
-  const personRows = users
+  const friendUsers = people.filter((u) => friendIds.includes(u.id));
+  const personRows = people
     .filter((u) => u.id !== me.id && u.name.toLowerCase().includes(q))
     .map((u) => {
       const id = dmId(me.id, u.id);
       const list = messages[id];
-      return { kind: 'dm', id, u, list, last: list?.[list.length - 1] };
+      return { kind: 'dm', id, u, list, last: list?.[list.length - 1], closed: !friendIds.includes(u.id) };
     })
     .sort(
       (a, b) =>
@@ -82,11 +84,13 @@ export default function Sidebar({
           <span className="conv-text">
             <span className="conv-name">
               {x.kind === 'room' ? x.r.name : x.u.name}
-              {x.kind === 'dm' && x.u.status?.emoji && <span className="conv-status">{x.u.status.emoji}</span>}
+              {x.kind === 'dm' && x.u.status?.emoji && <span className="conv-status"><Emoji char={x.u.status.emoji} /></span>}
             </span>
             <span className="conv-preview">
-              {previewOf(x.list, me.id) ||
-                (x.kind === 'room' ? x.r.topic : x.u.status?.text || (x.u.online ? 'Online' : 'Offline'))}
+              {x.closed && !x.list?.length
+                ? 'No longer friends'
+                : previewOf(x.list, me.id) ||
+                  (x.kind === 'room' ? x.r.topic : x.u.status?.text || (x.u.online ? 'Online' : 'Offline'))}
             </span>
           </span>
           {isMuted && <Icon name="bellOff" size={14} className="mute-mark" />}
@@ -147,14 +151,20 @@ export default function Sidebar({
         <section>
           <div className="side-title">
             <h3>Rooms &amp; groups</h3>
-            <button
-              className="icon-btn"
-              onClick={() => setAdding((v) => !v)}
-              aria-label="Create a room or private group"
-              aria-expanded={adding}
-            >
-              <Icon name={adding ? 'close' : 'plus'} size={15} />
-            </button>
+            <span className="title-actions">
+              <button className="icon-btn" onClick={onOpenDiscover} aria-label="Browse public rooms" title="Browse public rooms">
+                <Icon name="compass" size={15} />
+              </button>
+              <button
+                className="icon-btn"
+                onClick={() => setAdding((v) => !v)}
+                aria-label="Create a room or private group"
+                title="Create a room or group"
+                aria-expanded={adding}
+              >
+                <Icon name={adding ? 'close' : 'plus'} size={15} />
+              </button>
+            </span>
           </div>
 
           {adding && (
@@ -177,19 +187,18 @@ export default function Sidebar({
                     className={roomIcon === ic ? 'on' : ''}
                     onClick={() => setRoomIcon(ic)}
                   >
-                    {ic || '#'}
+                    {ic ? <Emoji char={ic} /> : '#'}
                   </button>
                 ))}
               </div>
               <label className="check dark">
                 <input type="checkbox" checked={roomPrivate} onChange={(e) => setRoomPrivate(e.target.checked)} />
-                Private group (invite only)
+                Private group (invite only, friends)
               </label>
               {roomPrivate && (
                 <div className="invite-list" role="group" aria-label="Invite people">
-                  {users.filter((u) => u.id !== me.id).length === 0 && <p className="side-empty">Nobody else has joined yet. You can invite people later.</p>}
-                  {users
-                    .filter((u) => u.id !== me.id)
+                  {friendUsers.length === 0 && <p className="side-empty">Add some friends first. You can invite them to this group later.</p>}
+                  {friendUsers
                     .map((u) => (
                       <label key={u.id} className="check dark">
                         <input
@@ -205,7 +214,7 @@ export default function Sidebar({
                 </div>
               )}
               <button type="submit" disabled={!roomName.trim()}>
-                {roomPrivate ? 'Create private group' : 'Create room'}
+                {roomPrivate ? 'Create private group' : 'Create public room'}
               </button>
               {roomError && <p className="form-error">{roomError}</p>}
             </form>
@@ -213,15 +222,40 @@ export default function Sidebar({
 
           <ul className="convs">{rest(roomRows).map(row)}</ul>
           {q && roomRows.length === 0 && <p className="side-empty">No rooms match.</p>}
+          {!q && rooms.length === 0 && (
+            <p className="side-empty">
+              You haven’t joined any rooms. <button className="link-btn on-dark" onClick={onOpenDiscover}>Browse public rooms</button>
+            </p>
+          )}
         </section>
 
         <section>
           <div className="side-title">
-            <h3>People</h3>
+            <h3>Friends</h3>
+            <button
+              className="icon-btn with-count"
+              onClick={() => onOpenFriends(requestCount ? 'requests' : 'add')}
+              aria-label={requestCount ? `Friends: ${requestCount} pending ${requestCount === 1 ? 'request' : 'requests'}` : 'Add a friend'}
+              title={requestCount ? 'Friend requests' : 'Add a friend'}
+            >
+              <Icon name="userPlus" size={15} />
+              {requestCount > 0 && <span className="dot-count">{requestCount}</span>}
+            </button>
           </div>
+          {requestCount > 0 && (
+            <button className="request-note" onClick={() => onOpenFriends('requests')}>
+              {requestCount} friend {requestCount === 1 ? 'request' : 'requests'} waiting
+            </button>
+          )}
           {personRows.length === 0 && (
             <p className="side-empty">
-              {q ? 'Nobody matches that.' : 'Open this page in another tab or device to meet someone.'}
+              {q ? (
+                'Nobody matches that.'
+              ) : (
+                <>
+                  No friends yet. <button className="link-btn on-dark" onClick={() => onOpenFriends('add')}>Add someone by username</button> to start chatting.
+                </>
+              )}
             </p>
           )}
           <ul className="convs">{rest(personRows).map(row)}</ul>
@@ -234,14 +268,17 @@ export default function Sidebar({
           <span className="me-text">
             <span className="me">{me.name}</span>
             <span className="me-status">
-              {me.status ? `${me.status.emoji} ${me.status.text}`.trim() : 'Set a status'}
+              {me.status ? <><Emoji char={me.status.emoji} /> {me.status.text}</> : 'Set a status'}
             </span>
           </span>
         </button>
         <button className="side-icon" onClick={onOpenSettings} aria-label="Settings" title="Settings">
           <Icon name="settings" />
         </button>
-        <button className="side-icon" onClick={onLeave} aria-label="Switch name" title="Switch name">
+        <button className="side-icon" onClick={() => onOpenFriends('friends')} aria-label="Friends" title="Friends">
+          <Icon name="users" />
+        </button>
+        <button className="side-icon" onClick={onLogout} aria-label="Log out" title="Log out">
           <Icon name="logout" />
         </button>
       </footer>

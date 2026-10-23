@@ -20,6 +20,7 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - Slash commands: `/me`, `/shrug`, `/poll`, `/roll` (or `/roll 2d6`), `/flip`. Dice are rolled on the server so results can't be faked
 - ||Spoiler text|| stays blurred until clicked; `:fire:` style emoji shortcodes with autocomplete
 - **Saved messages**: bookmark any message from the ⋯ menu and find it again across all conversations
+- **Parley's own emoji**: 52 hand-drawn emoji (faces, hands, hearts, objects) replace the system ones in reactions, the picker, messages, room icons and statuses. Messages are still stored as normal Unicode, and anything not drawn falls back to the system emoji. Artwork lives in `src/emojiArt.js`
 - Press **↑** in an empty composer to edit your last message; hover a reaction to see who gave it
 - Export any conversation as a `.txt` file from the Details panel
 - @mentions with autocomplete; image sharing by paperclip or paste
@@ -32,10 +33,11 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - Messages saved on the server in `.data/parley.json`
 
 ## Notes
-- Each browser tab is its own person (identity lives in sessionStorage), which makes
-  testing easy. Closing the tab forgets who you were; rejoin with the same name.
-- This is a demo-grade app: names are not passwords, so anyone can pick any name.
-  Add real accounts before using it for anything private.
+- To test with two people, use two different browsers or a private window.
+- Accounts: username + password (scrypt-hashed). Sign-ins last 30 days and are shared by all tabs in a browser.
+- Friends: add people by exact username. DMs need friendship; unfriending keeps history readable but closes the chat.
+- Public rooms: browse and join from the compass button. You only get messages from rooms you joined. Owners can ban people.
+- Data from older versions (name-only users and chats) is wiped on first start of this version.
 
 ## Host it (Render, Railway, Fly.io, any Node host)
 Parley needs a Node server that stays running (it holds live connections), so static

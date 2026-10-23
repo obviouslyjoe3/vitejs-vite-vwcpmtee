@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon.jsx';
 import { EMOJI, SHORTCODES, replaceShortcodes } from '../constants.js';
+import Emoji, { hasArt } from '../Emoji.jsx';
 
 
 // Resize to max 1280px and re-encode as JPEG so messages stay small.
@@ -76,7 +77,7 @@ export default function Composer({
 
   const shortCands = short
     ? Object.keys(SHORTCODES)
-        .filter((k) => k.startsWith(short.query.toLowerCase()))
+        .filter((k) => hasArt(SHORTCODES[k]) && k.startsWith(short.query.toLowerCase()))
         .slice(0, 6)
     : [];
   const menuLen = candidates.length || shortCands.length;
@@ -280,7 +281,7 @@ export default function Composer({
                     insertShort(k);
                   }}
                 >
-                  <span className="emoji-pick">{SHORTCODES[k]}</span>
+                  <span className="emoji-pick"><Emoji char={SHORTCODES[k]} /></span>
                   :{k}:
                 </button>
               </li>
@@ -336,8 +337,8 @@ export default function Composer({
             {emojiOpen && (
               <div className="emoji-grid">
                 {EMOJI.map((e) => (
-                  <button key={e} onClick={() => addEmoji(e)}>
-                    {e}
+                  <button key={e} onClick={() => addEmoji(e)} aria-label={e}>
+                    <Emoji char={e} />
                   </button>
                 ))}
               </div>

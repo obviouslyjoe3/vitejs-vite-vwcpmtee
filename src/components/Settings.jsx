@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { COLORS, ACCENTS, STATUS_PRESETS } from '../constants.js';
+import Emoji from '../Emoji.jsx';
 
 const THEMES = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
 const STYLES = [['bubbles', 'Bubbles'], ['flat', 'Flat']];
@@ -32,7 +33,60 @@ const zones = () => {
   }
 };
 
-export default function Settings({ me, appearance, prefs, onAppearance, onColor, onStatus, onProfile, onPrefs, onClose }) {
+function AccountSection({ me, onChangePassword, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [note, setNote] = useState(null); // { ok, text }
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (next.length < 8) return setNote({ ok: false, text: 'Use at least 8 characters for the new password.' });
+    if (next !== again) return setNote({ ok: false, text: 'The two new passwords do not match.' });
+    setBusy(true);
+    const res = await onChangePassword(current, next);
+    setBusy(false);
+    if (res.error) return setNote({ ok: false, text: res.error });
+    setCurrent('');
+    setNext('');
+    setAgain('');
+    setOpen(false);
+    setNote({ ok: true, text: 'Password changed. Your other devices have been signed out.' });
+  };
+
+  return (
+    <section>
+      <h3>Account</h3>
+      <p className="account-line">
+        Signed in as <strong>{me.name}</strong>
+      </p>
+      <div className="inline-actions">
+        <button className="chip" type="button" onClick={() => { setOpen((v) => !v); setNote(null); }} aria-expanded={open}>
+          Change password
+        </button>
+        <button className="chip" type="button" onClick={onLogout}>Log out</button>
+      </div>
+      {open && (
+        <form className="profile-form" onSubmit={submit}>
+          <label className="field-label" htmlFor="pw-current">Current password</label>
+          <input id="pw-current" type="password" className="field" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" maxLength={128} />
+          <label className="field-label" htmlFor="pw-new">New password</label>
+          <input id="pw-new" type="password" className="field" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" maxLength={128} placeholder="At least 8 characters" />
+          <label className="field-label" htmlFor="pw-again">Repeat new password</label>
+          <input id="pw-again" type="password" className="field" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" maxLength={128} />
+          <div className="inline-actions">
+            <button className="primary" type="submit" disabled={!current || !next || busy}>{busy ? 'Saving…' : 'Save password'}</button>
+          </div>
+        </form>
+      )}
+      {note && <p className={note.ok ? 'saved' : 'form-error'} role="status">{note.text}</p>}
+    </section>
+  );
+}
+
+export default function Settings({ me, appearance, prefs, onAppearance, onColor, onStatus, onProfile, onPrefs, onChangePassword, onLogout, onClose }) {
   const [emoji, setEmoji] = useState(me.status?.emoji || '');
   const [text, setText] = useState(me.status?.text || '');
   const [bio, setBio] = useState(me.bio || '');
@@ -74,6 +128,8 @@ export default function Settings({ me, appearance, prefs, onAppearance, onColor,
           <button className="text-btn" onClick={onClose}>Done</button>
         </header>
 
+        <AccountSection me={me} onChangePassword={onChangePassword} onLogout={onLogout} />
+
         <section>
           <h3>Status</h3>
           <form className="status-form" onSubmit={saveStatus}>
@@ -84,7 +140,7 @@ export default function Settings({ me, appearance, prefs, onAppearance, onColor,
           <div className="chips">
             {STATUS_PRESETS.map((s) => (
               <button key={s.text} className="chip" onClick={() => { setEmoji(s.emoji); setText(s.text); onStatus(s); }}>
-                {s.emoji} {s.text}
+                <Emoji char={s.emoji} /> {s.text}
               </button>
             ))}
             {me.status && <button className="chip ghost" onClick={clearStatus}>Clear status</button>}
@@ -147,7 +203,7 @@ export default function Settings({ me, appearance, prefs, onAppearance, onColor,
         </section>
 
         <section>
-          <h3>Alerts for direct messages and @mentions</h3>
+          <h3>Alerts for direct messages, @mentions and friend requests</h3>
           <label className="check">
             <input type="checkbox" checked={prefs.sound} onChange={(e) => onPrefs({ ...prefs, sound: e.target.checked })} />
             Play a sound

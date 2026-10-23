@@ -68,3 +68,21 @@ export const loadSaved = (meId) => {
   }
 };
 export const saveSaved = (meId, list) => set(savedKey(meId), list);
+
+// One-time cleanup after the move to real accounts: everything this browser remembered
+// about the old name-only identities (read markers, drafts, saved messages, stars) belongs
+// to accounts that no longer exist. Appearance and alert settings are kept.
+const SCHEMA_KEY = 'parley:schema';
+const SCHEMA = '2';
+export const purgeLegacyData = () => {
+  try {
+    if (localStorage.getItem(SCHEMA_KEY) === SCHEMA) return;
+    const keep = new Set(['parley:appearance', 'parley:prefs', 'parley:theme', SCHEMA_KEY]);
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('parley:') && !keep.has(key)) localStorage.removeItem(key);
+    }
+    sessionStorage.removeItem('parley:session');
+    sessionStorage.removeItem('parley:active');
+    localStorage.setItem(SCHEMA_KEY, SCHEMA);
+  } catch {}
+};

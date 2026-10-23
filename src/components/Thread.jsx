@@ -7,6 +7,7 @@ import Panel from './Panel.jsx';
 import RoomGlyph from './RoomGlyph.jsx';
 import { PollDialog } from './Poll.jsx';
 import { mentionSource } from '../richText.jsx';
+import Emoji from '../Emoji.jsx';
 
 const GROUP_MS = 5 * 60 * 1000;
 
@@ -21,9 +22,9 @@ const dayLabel = (ts) => {
 };
 
 export default function Thread({
-  conv, me, users, messages, typers, offline, dividerTs, jump, draft, panel,
-  starred, muted, saved, onSave, onOpenSaved, onProfile,
-  onEditRoom, onDeleteRoom, onInvite, onKick, onLeaveRoom,
+  conv, me, users, friendUsers, messages, typers, offline, dividerTs, jump, draft, panel,
+  starred, muted, saved, onSave, onOpenSaved, onProfile, onAddFriend,
+  onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers,
   onDraft, onPanel, onStar, onMute, onSetTopic, onJumped,
   onBack, onSend, onTyping, onReact, onEdit, onDelete, onPin, onVote,
 }) {
@@ -172,9 +173,13 @@ export default function Thread({
           <div className="thread-title">
             <h1>{conv.title}</h1>
             <p>
-              {conv.kind === 'dm' && conv.user.status
-                ? `${conv.user.status.emoji} ${conv.user.status.text} · ${conv.subtitle}`
-                : conv.subtitle || 'No topic yet'}
+              {conv.kind === 'dm' && conv.user.status ? (
+                <>
+                  <Emoji char={conv.user.status.emoji} /> {conv.user.status.text} · {conv.subtitle}
+                </>
+              ) : (
+                conv.subtitle || 'No topic yet'
+              )}
             </p>
           </div>
           <div className="head-tools">
@@ -243,6 +248,15 @@ export default function Thread({
 
         <div className="typing" aria-live="polite">{typingText}</div>
 
+        {conv.closed ? (
+          <div className="closed-note" role="status">
+            <p>
+              You and {conv.title} aren’t friends, so you can’t send new messages here. Your old messages are still
+              readable.
+            </p>
+            <button className="primary" onClick={() => onAddFriend(conv.user)}>Add friend</button>
+          </div>
+        ) : (
         <Composer
           placeholder={conv.kind === 'dm' ? `Message ${conv.title}` : `Message #${conv.title}`}
           disabled={offline}
@@ -260,6 +274,7 @@ export default function Thread({
           }}
           onTyping={onTyping}
         />
+        )}
       </div>
 
       {panel && (
@@ -268,6 +283,7 @@ export default function Thread({
           conv={conv}
           me={me}
           users={users}
+          friendUsers={friendUsers}
           messages={messages}
           starred={starred}
           muted={muted}
@@ -290,7 +306,9 @@ export default function Thread({
           onDeleteRoom={onDeleteRoom}
           onInvite={onInvite}
           onKick={onKick}
+          onUnban={onUnban}
           onLeaveRoom={onLeaveRoom}
+          onMembers={onMembers}
           onClose={() => onPanel(null)}
         />
       )}

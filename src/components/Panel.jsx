@@ -4,6 +4,7 @@ import Icon from './Icon.jsx';
 import { ProfileFacts } from './ProfileCard.jsx';
 import { GROUP_ICONS } from '../constants.js';
 import { highlight, stripMarks } from '../richText.jsx';
+import Emoji from '../Emoji.jsx';
 
 const when = (ts) =>
   new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -110,7 +111,7 @@ function GroupManage({ room, onEditRoom }) {
       <div className="icon-row light" role="radiogroup" aria-label="Group icon">
         {GROUP_ICONS.map((ic) => (
           <button type="button" key={ic || 'hash'} role="radio" aria-checked={icon === ic} className={icon === ic ? 'on' : ''} onClick={() => setIcon(ic)}>
-            {ic || '#'}
+            {ic ? <Emoji char={ic} /> : '#'}
           </button>
         ))}
       </div>
@@ -123,19 +124,35 @@ function GroupManage({ room, onEditRoom }) {
 }
 
 function InfoTab({
-  conv, users, me, starred, muted, onStar, onMute, onSetTopic, onExport,
-  onProfile, onEditRoom, onDeleteRoom, onInvite, onKick, onLeaveRoom,
+  conv, users, friendUsers, me, starred, muted, onStar, onMute, onSetTopic, onExport,
+  onProfile, onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers,
 }) {
   const [topic, setTopic] = useState(conv.topic || '');
   const [state, setState] = useState('');
   const [error, setError] = useState('');
+  const [listed, setListed] = useState({ users: [], total: 0 }); // public rooms: fetched from the server
   useEffect(() => setTopic(conv.topic || ''), [conv.topic]);
 
   const room = conv.room;
   const isOwner = !!room && room.owner === me.id;
+  const canTopic = !!room && (room.private || isOwner);
   const ownerName = room?.owner ? users.find((u) => u.id === room.owner)?.name : null;
-  const members = room?.private ? users.filter((u) => room.members.includes(u.id)) : users;
-  const outsiders = room?.private ? users.filter((u) => !room.members.includes(u.id)) : [];
+  const count = room?.count ?? room?.members?.length ?? 0;
+
+  // A public room can have hundreds of people, so the server only sends the list when asked.
+  useEffect(() => {
+    if (!room || room.private) return undefined;
+    let live = true;
+    onMembers(room.id).then((res) => {
+      if (live && res.users) setListed({ users: res.users, total: res.total });
+    });
+    return () => {
+      live = false;
+    };
+  }, [room?.id, room?.private, count]);
+
+  const members = room?.private ? users.filter((u) => room.members.includes(u.id)) : listed.users;
+  const outsiders = room?.private ? friendUsers.filter((u) => !room.members.includes(u.id)) : [];
 
   const save = async (e) => {
     e.preventDefault();
@@ -151,7 +168,14 @@ function InfoTab({
     if (window.confirm(`Delete #${room.name} and all its messages for everyone? This cannot be undone.`)) run(onDeleteRoom(room.id));
   };
   const leave = () => {
-    if (window.confirm(`Leave #${room.name}? You will need an invite to come back.`)) run(onLeaveRoom(room.id));
+    const how = room.private ? 'You will need an invite to come back.' : 'You can rejoin any time from Browse rooms.';
+    if (window.confirm(`Leave #${room.name}? ${how}`)) run(onLeaveRoom(room.id));
+  };
+  const kick = (u) => {
+    const text = room.private
+      ? `Remove ${u.name} from #${room.name}?`
+      : `Remove ${u.name} from #${room.name} and stop them from rejoining?`;
+    if (window.confirm(text)) run(onKick(room.id, u.id));
   };
 
   return (
@@ -171,31 +195,40 @@ function InfoTab({
               <Icon name={room.private ? 'lock' : 'hash'} size={13} /> {room.private ? 'Private group' : 'Public room'}
             </span>
             <p className="group-meta">
-              {room.private ? `${members.length} ${members.length === 1 ? 'member' : 'members'}` : 'Everyone can see and join'}
+              {`${count} ${count === 1 ? 'member' : 'members'}`}
+              {room.private ? '' : ' · Anyone can join'}
               {ownerName && ` · Owner: ${ownerName}${room.owner === me.id ? ' (you)' : ''}`}
+              {room.official && ' · Official room'}
               {room.createdAt ? ` · Created ${new Date(room.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
             </p>
           </div>
 
           {isOwner && <GroupManage room={room} onEditRoom={onEditRoom} />}
 
-          <form onSubmit={save} className="info-block">
-            <label className="field-label" htmlFor="topic">Topic</label>
-            <input
-              id="topic"
-              className="field"
-              value={topic}
-              maxLength={120}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="What is this room for?"
-            />
-            <div className="inline-actions">
-              <button className="primary" type="submit" disabled={topic.trim() === (conv.topic || '')}>
-                Save topic
-              </button>
-              {state && <span className="saved">{state}</span>}
+          {canTopic ? (
+            <form onSubmit={save} className="info-block">
+              <label className="field-label" htmlFor="topic">Topic</label>
+              <input
+                id="topic"
+                className="field"
+                value={topic}
+                maxLength={120}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="What is this room for?"
+              />
+              <div className="inline-actions">
+                <button className="primary" type="submit" disabled={topic.trim() === (conv.topic || '')}>
+                  Save topic
+                </button>
+                {state && <span className="saved">{state}</span>}
+              </div>
+            </form>
+          ) : (
+            <div className="info-block">
+              <h3 className="panel-h">Topic</h3>
+              <p className="group-meta flat">{conv.topic || 'No topic yet'}</p>
             </div>
-          </form>
+          )}
         </>
       )}
 
@@ -215,9 +248,9 @@ function InfoTab({
       {conv.kind === 'room' && (
         <div className="info-block">
           <h3 className="panel-h">
-            {room.private
-              ? `Members · ${members.filter((u) => u.online).length} online of ${members.length}`
-              : `People · ${users.filter((u) => u.online).length} online of ${users.length}`}
+            {`Members · ${members.filter((u) => (u.id === me.id ? true : u.online)).length} online${
+              room.private || listed.total <= listed.users.length ? ` of ${members.length}` : ` of ${listed.total}`
+            }`}
           </h3>
           <ul className="people">
             {[...members]
@@ -233,26 +266,49 @@ function InfoTab({
                         {u.id === room.owner && <span className="owner-tag">Owner</span>}
                       </span>
                       {u.status ? (
-                        <small>{u.status.emoji} {u.status.text}</small>
+                        <small><Emoji char={u.status.emoji} /> {u.status.text}</small>
                       ) : (
                         u.pronouns && <small>{u.pronouns}</small>
                       )}
                     </span>
                   </button>
-                  {isOwner && room.private && u.id !== me.id && (
-                    <button className="text-btn danger-text" onClick={() => run(onKick(room.id, u.id))}>Remove</button>
+                  {isOwner && u.id !== me.id && (
+                    <button className="text-btn danger-text" onClick={() => kick(u)}>{room.private ? 'Remove' : 'Ban'}</button>
                   )}
                 </li>
               ))}
+          </ul>
+          {!room.private && listed.total > listed.users.length && (
+            <p className="panel-empty tight">Showing the first {listed.users.length} of {listed.total} people.</p>
+          )}
+        </div>
+      )}
+
+      {isOwner && !room.private && room.banned?.length > 0 && (
+        <div className="info-block">
+          <h3 className="panel-h">Banned from this room</h3>
+          <ul className="people">
+            {room.banned.map((b) => (
+              <li key={b.id}>
+                <span className="person-btn static">
+                  <span className="people-name"><span>{b.name}</span></span>
+                </span>
+                <button className="text-btn" onClick={() => run(onUnban(room.id, b.id))}>Unban</button>
+              </li>
+            ))}
           </ul>
         </div>
       )}
 
       {room?.private && (
         <div className="info-block">
-          <h3 className="panel-h">Add people</h3>
+          <h3 className="panel-h">Add friends</h3>
           {outsiders.length === 0 ? (
-            <p className="panel-empty tight">Everyone who has joined Parley is already in this group.</p>
+            <p className="panel-empty tight">
+              {friendUsers.length === 0
+                ? 'You can add friends to a group. Add some from the Friends list first.'
+                : 'All your friends are already in this group.'}
+            </p>
           ) : (
             <ul className="people">
               {outsiders.map((u) => (
@@ -271,10 +327,10 @@ function InfoTab({
 
       {error && <p className="form-error">{error}</p>}
 
-      {room?.private && !isOwner && (
+      {room && !isOwner && (
         <div className="info-block">
           <button className="toggle-row danger" onClick={leave}>
-            <Icon name="logout" /> <span>Leave this group</span>
+            <Icon name="logout" /> <span>Leave this {room.private ? 'group' : 'room'}</span>
           </button>
         </div>
       )}
@@ -340,8 +396,8 @@ const exportChat = (conv, users, messages) => {
 const TITLES = { info: 'Details', pins: 'Pinned messages', search: 'Search', saved: 'Saved messages' };
 
 export default function Panel({
-  mode, conv, me, users, messages, starred, muted, saved, onStar, onMute, onSetTopic, onJump, onUnpin,
-  onOpenSaved, onRemoveSaved, onProfile, onEditRoom, onDeleteRoom, onInvite, onKick, onLeaveRoom, onClose,
+  mode, conv, me, users, friendUsers, messages, starred, muted, saved, onStar, onMute, onSetTopic, onJump, onUnpin,
+  onOpenSaved, onRemoveSaved, onProfile, onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers, onClose,
 }) {
   return (
     <aside className="panel" aria-label={TITLES[mode]}>
@@ -359,6 +415,7 @@ export default function Panel({
           <InfoTab
             conv={conv}
             users={users}
+            friendUsers={friendUsers}
             me={me}
             starred={starred}
             muted={muted}
@@ -371,7 +428,9 @@ export default function Panel({
             onDeleteRoom={onDeleteRoom}
             onInvite={onInvite}
             onKick={onKick}
+            onUnban={onUnban}
             onLeaveRoom={onLeaveRoom}
+            onMembers={onMembers}
           />
         )}
       </div>

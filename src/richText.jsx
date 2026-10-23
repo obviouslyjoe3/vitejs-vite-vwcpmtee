@@ -3,6 +3,7 @@
 // so message text cannot inject markup.
 
 import { useState } from 'react';
+import { withEmoji } from './Emoji.jsx';
 
 const BASE =
   /`[^`\n]+`|\|\|[^|\n]+\|\||\*\*[^*\n]+\*\*|~~[^~\n]+~~|(?<!\w)_[^_\n]+_(?!\w)|https?:\/\/[^\s<]+[^\s<.,;:!?)"']/.source;
@@ -32,13 +33,13 @@ function Spoiler({ children }) {
 
 function inline(text, re, meTag, keyBase) {
   return text.split(re).map((part, i) => {
-    if (i % 2 === 0) return part;
+    if (i % 2 === 0) return withEmoji(part, `${keyBase}-t${i}`);
     const key = `${keyBase}-${i}`;
     if (part.startsWith('`')) return <code key={key}>{part.slice(1, -1)}</code>;
-    if (part.startsWith('||')) return <Spoiler key={key}>{part.slice(2, -2)}</Spoiler>;
-    if (part.startsWith('**')) return <strong key={key}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith('~~')) return <s key={key}>{part.slice(2, -2)}</s>;
-    if (part.startsWith('_')) return <em key={key}>{part.slice(1, -1)}</em>;
+    if (part.startsWith('||')) return <Spoiler key={key}>{withEmoji(part.slice(2, -2), key)}</Spoiler>;
+    if (part.startsWith('**')) return <strong key={key}>{withEmoji(part.slice(2, -2), key)}</strong>;
+    if (part.startsWith('~~')) return <s key={key}>{withEmoji(part.slice(2, -2), key)}</s>;
+    if (part.startsWith('_')) return <em key={key}>{withEmoji(part.slice(1, -1), key)}</em>;
     if (part.startsWith('@')) {
       return (
         <span key={key} className={part.toLowerCase() === meTag ? 'mention me' : 'mention'}>

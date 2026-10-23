@@ -4,6 +4,7 @@ import Icon from './Icon.jsx';
 import { PollView } from './Poll.jsx';
 import { renderRich } from '../richText.jsx';
 import { REACTIONS } from '../constants.js';
+import Emoji from '../Emoji.jsx';
 
 
 const clock = (ts) =>
@@ -214,7 +215,7 @@ export default function Message({
                           setPicking(false);
                         }}
                       >
-                        {e}
+                        <Emoji char={e} />
                       </button>
                     ))}
                   </div>
@@ -279,7 +280,7 @@ export default function Message({
                 onClick={() => onReact(msg.id, emoji)}
                 title={ids.map((id) => (id === me.id ? 'You' : nameOf?.(id) || 'Someone')).join(', ')}
               >
-                {emoji} {ids.length}
+                <Emoji char={emoji} /> {ids.length}
               </button>
             ))}
           </div>

@@ -66,7 +66,7 @@ export default function QuickSwitcher({ me, rooms, users, messages, onPick, onCl
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={key}
-            placeholder="Jump to a room or person, or search messages"
+            placeholder="Jump to a room or friend, or search messages"
             aria-label="Jump to"
             role="combobox"
             aria-expanded="true"
