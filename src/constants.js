@@ -29,3 +29,20 @@ export const ACCENTS = [
   ['amber', 'Amber', '#B8620F'],
   ['blue', 'Blue', '#2A6FBF'],
 ];
+
+// :shortcode: -> emoji (typed with autocomplete, converted when you send)
+export const SHORTCODES = {
+  smile: '😀', grin: '😁', joy: '😂', laugh: '🤣', wink: '😉', heart_eyes: '😍', cool: '😎',
+  think: '🤔', cry: '😭', sob: '😭', sweat: '😅', shock: '😮', scream: '😱', sleepy: '😴', party: '🥳',
+  mindblown: '🤯', eyes: '👀', thumbsup: '👍', thumbsdown: '👎', clap: '👏', pray: '🙏', wave: '👋',
+  muscle: '💪', ok: '👌', handshake: '🤝', raised_hands: '🙌', heart: '❤️', purple_heart: '💜',
+  fire: '🔥', sparkles: '✨', star: '⭐', tada: '🎉', rocket: '🚀', hundred: '💯', check: '✅', x: '❌',
+  warning: '⚠️', bulb: '💡', pin: '📌', trophy: '🏆', coffee: '☕', pizza: '🍕', beer: '🍺', cake: '🎂',
+  dog: '🐶', cat: '🐱', rainbow: '🌈', sun: '☀️', moon: '🌙', snowflake: '❄️', music: '🎵', headphones: '🎧',
+  gift: '🎁', bug: '🐛', skull: '💀', ghost: '👻', robot: '🤖', poop: '💩', zzz: '💤', hourglass: '⌛',
+};
+export const replaceShortcodes = (text) =>
+  text.replace(/:([a-z0-9_]{1,20}):/g, (m, k) => SHORTCODES[k] || m);
+
+// Icons a group can use (empty string means the default #). Keep in sync with GROUP_ICONS in server/chatServer.js
+export const GROUP_ICONS = ['', '💬', '💡', '🎮', '🎵', '📚', '🍕', '🌱', '🚀', '🎨', '⚽', '✈️', '🐶', '☕'];

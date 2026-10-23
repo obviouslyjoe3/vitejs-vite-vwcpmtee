@@ -2,6 +2,8 @@ import { useState } from 'react';
 import Avatar from './Avatar.jsx';
 import Logo from './Logo.jsx';
 import Icon from './Icon.jsx';
+import RoomGlyph from './RoomGlyph.jsx';
+import { GROUP_ICONS } from '../constants.js';
 import { dmId } from '../useParley.js';
 import { stripMarks } from '../richText.jsx';
 
@@ -24,6 +26,9 @@ export default function Sidebar({
   const [adding, setAdding] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [roomError, setRoomError] = useState('');
+  const [roomIcon, setRoomIcon] = useState('');
+  const [roomPrivate, setRoomPrivate] = useState(false);
+  const [roomMembers, setRoomMembers] = useState([]);
   const q = query.trim().toLowerCase();
 
   const roomRows = rooms
@@ -49,9 +54,12 @@ export default function Sidebar({
 
   const submitRoom = async (e) => {
     e.preventDefault();
-    const res = await onCreateRoom(roomName);
+    const res = await onCreateRoom({ name: roomName, icon: roomIcon, private: roomPrivate, members: roomMembers });
     if (res.error) return setRoomError(res.error);
     setRoomName('');
+    setRoomIcon('');
+    setRoomPrivate(false);
+    setRoomMembers([]);
     setRoomError('');
     setAdding(false);
   };
@@ -67,7 +75,7 @@ export default function Sidebar({
           aria-current={active === x.id ? 'true' : undefined}
         >
           {x.kind === 'room' ? (
-            <span className="room-glyph">#</span>
+            <RoomGlyph room={x.r} />
           ) : (
             <Avatar user={x.u} size={36} online={x.u.online} />
           )}
@@ -138,11 +146,11 @@ export default function Sidebar({
 
         <section>
           <div className="side-title">
-            <h3>Rooms</h3>
+            <h3>Rooms &amp; groups</h3>
             <button
               className="icon-btn"
               onClick={() => setAdding((v) => !v)}
-              aria-label="Create a room"
+              aria-label="Create a room or private group"
               aria-expanded={adding}
             >
               <Icon name={adding ? 'close' : 'plus'} size={15} />
@@ -159,8 +167,45 @@ export default function Sidebar({
                 autoFocus
                 aria-label="Room name"
               />
+              <div className="icon-row" role="radiogroup" aria-label="Group icon">
+                {GROUP_ICONS.map((ic) => (
+                  <button
+                    type="button"
+                    key={ic || 'hash'}
+                    role="radio"
+                    aria-checked={roomIcon === ic}
+                    className={roomIcon === ic ? 'on' : ''}
+                    onClick={() => setRoomIcon(ic)}
+                  >
+                    {ic || '#'}
+                  </button>
+                ))}
+              </div>
+              <label className="check dark">
+                <input type="checkbox" checked={roomPrivate} onChange={(e) => setRoomPrivate(e.target.checked)} />
+                Private group (invite only)
+              </label>
+              {roomPrivate && (
+                <div className="invite-list" role="group" aria-label="Invite people">
+                  {users.filter((u) => u.id !== me.id).length === 0 && <p className="side-empty">Nobody else has joined yet. You can invite people later.</p>}
+                  {users
+                    .filter((u) => u.id !== me.id)
+                    .map((u) => (
+                      <label key={u.id} className="check dark">
+                        <input
+                          type="checkbox"
+                          checked={roomMembers.includes(u.id)}
+                          onChange={(e) =>
+                            setRoomMembers((cur) => (e.target.checked ? [...cur, u.id] : cur.filter((x) => x !== u.id)))
+                          }
+                        />
+                        {u.name}
+                      </label>
+                    ))}
+                </div>
+              )}
               <button type="submit" disabled={!roomName.trim()}>
-                Create room
+                {roomPrivate ? 'Create private group' : 'Create room'}
               </button>
               {roomError && <p className="form-error">{roomError}</p>}
             </form>

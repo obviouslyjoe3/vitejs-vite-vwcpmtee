@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon.jsx';
-import { EMOJI } from '../constants.js';
+import { EMOJI, SHORTCODES, replaceShortcodes } from '../constants.js';
 
 
 // Resize to max 1280px and re-encode as JPEG so messages stay small.
@@ -33,13 +33,14 @@ function fileToDataUrl(file) {
 
 export default function Composer({
   placeholder, disabled, users, me, replyTo, draft = '', onDraft,
-  onCancelReply, onSend, onTyping, onOpenPoll,
+  onCancelReply, onSend, onTyping, onOpenPoll, onEditLast,
 }) {
   const [text, setText] = useState(draft);
   const [image, setImage] = useState(null);
   const [note, setNote] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [mention, setMention] = useState(null); // { query, start, caret }
+  const [short, setShort] = useState(null); // { query, start, caret } for :shortcodes
   const [pick, setPick] = useState(0);
   const box = useRef(null);
   const fileRef = useRef(null);
@@ -73,6 +74,13 @@ export default function Composer({
         .slice(0, 5)
     : [];
 
+  const shortCands = short
+    ? Object.keys(SHORTCODES)
+        .filter((k) => k.startsWith(short.query.toLowerCase()))
+        .slice(0, 6)
+    : [];
+  const menuLen = candidates.length || shortCands.length;
+
   const grow = () => {
     const el = box.current;
     if (!el) return;
@@ -96,11 +104,12 @@ export default function Composer({
       return onOpenPoll?.();
     }
     if (/^\/shrug(\s|$)/i.test(out)) out = (out.slice(6).trim() + ' ¯\\_(ツ)_/¯').trim();
-    onSend({ text: out, image });
+    onSend({ text: replaceShortcodes(out), image });
     update('');
     setImage(null);
     setNote('');
     setMention(null);
+    setShort(null);
     setEmojiOpen(false);
     requestAnimationFrame(grow);
   };
@@ -123,6 +132,8 @@ export default function Composer({
 
     const m = /(^|\s)@([^\s@]{0,24})$/.exec(value.slice(0, caret));
     setMention(m ? { query: m[2], start: caret - m[2].length - 1, caret } : null);
+    const sc = /(^|\s):([a-z0-9_]{2,20})$/i.exec(value.slice(0, caret));
+    setShort(sc && !m ? { query: sc[2], start: caret - sc[2].length - 1, caret } : null);
     setPick(0);
 
     const now = Date.now();
@@ -136,6 +147,17 @@ export default function Composer({
     const before = text.slice(0, mention.start) + '@' + u.name + ' ';
     update(before + text.slice(mention.caret));
     setMention(null);
+    requestAnimationFrame(() => {
+      box.current?.focus();
+      box.current?.setSelectionRange(before.length, before.length);
+    });
+  };
+
+  const insertShort = (key) => {
+    const emo = SHORTCODES[key] + ' ';
+    const before = text.slice(0, short.start) + emo;
+    update(before + text.slice(short.caret));
+    setShort(null);
     requestAnimationFrame(() => {
       box.current?.focus();
       box.current?.setSelectionRange(before.length, before.length);
@@ -171,20 +193,26 @@ export default function Composer({
   };
 
   const keyDown = (e) => {
-    if (candidates.length) {
+    if (menuLen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        return setPick((p) => (p + 1) % candidates.length);
+        return setPick((p) => (p + 1) % menuLen);
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        return setPick((p) => (p - 1 + candidates.length) % candidates.length);
+        return setPick((p) => (p - 1 + menuLen) % menuLen);
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        return insertMention(candidates[pick] || candidates[0]);
+        return candidates.length
+          ? insertMention(candidates[pick] || candidates[0])
+          : insertShort(shortCands[pick] || shortCands[0]);
       }
-      if (e.key === 'Escape') return setMention(null);
+      if (e.key === 'Escape') return candidates.length ? setMention(null) : setShort(null);
+    }
+    if (e.key === 'ArrowUp' && !text && !image && onEditLast) {
+      e.preventDefault();
+      return onEditLast();
     }
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'b') {
@@ -233,6 +261,27 @@ export default function Composer({
                 >
                   <span className="dot" style={{ background: u.color }} />
                   {u.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {shortCands.length > 0 && (
+          <ul className="mentions" role="listbox" aria-label="Emoji suggestions">
+            {shortCands.map((k, i) => (
+              <li key={k}>
+                <button
+                  role="option"
+                  aria-selected={i === pick}
+                  className={i === pick ? 'on' : ''}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    insertShort(k);
+                  }}
+                >
+                  <span className="emoji-pick">{SHORTCODES[k]}</span>
+                  :{k}:
                 </button>
               </li>
             ))}
@@ -310,7 +359,7 @@ export default function Composer({
           <button className="tool" onClick={() => wrap('`')} disabled={disabled} aria-label="Code" title="Code">
             <Icon name="code" size={16} />
           </button>
-          <span className="bar-hint">Enter to send · Shift+Enter for a new line</span>
+          <span className="bar-hint">Enter to send · Shift+Enter for a new line · ↑ edits your last message</span>
           <button className="send" onClick={send} disabled={!canSend} aria-label="Send message">
             <Icon name="send" size={16} /> Send
           </button>

@@ -44,6 +44,20 @@ const cleanStatus = (st) => {
   return text || emoji ? { emoji, text } : null;
 };
 
+const cleanBio = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+const cleanPronouns = (v) => String(v || '').trim().slice(0, 20);
+const cleanTz = (v) => {
+  if (typeof v !== 'string' || !v) return '';
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: v });
+    return v;
+  } catch {
+    return '';
+  }
+};
+const GROUP_ICONS = ['', '💬', '💡', '🎮', '🎵', '📚', '🍕', '🌱', '🚀', '🎨', '⚽', '✈️', '🐶', '☕'];
+const MAX_MEMBERS = 50;
+
 const cleanPoll = (p) => {
   if (!p || typeof p !== 'object') return null;
   const question = String(p.question || '').trim().slice(0, 140);
@@ -57,6 +71,22 @@ const cleanPoll = (p) => {
   return { question, options, multi: !!p.multi };
 };
 
+// /roll [NdM] and /flip are resolved on the server so nobody can fake a result.
+const runDice = (text) => {
+  const roll = /^\/roll(?:\s+(\d{1,2})d(\d{1,3}))?\s*$/i.exec(text);
+  if (roll) {
+    const n = Math.max(1, Math.min(20, Number(roll[1] || 1)));
+    const sides = Math.max(2, Math.min(100, Number(roll[2] || 6)));
+    const dice = Array.from({ length: n }, () => 1 + Math.floor(Math.random() * sides));
+    const total = dice.reduce((a, b) => a + b, 0);
+    return n === 1
+      ? `rolled a d${sides}: ${total}`
+      : `rolled ${n}d${sides}: ${dice.join(' + ')} = ${total}`;
+  }
+  if (/^\/flip\s*$/i.test(text)) return `flipped a coin: ${Math.random() < 0.5 ? 'heads' : 'tails'}`;
+  return null;
+};
+
 const loadSaved = () => {
   try {
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -68,7 +98,9 @@ const loadSaved = () => {
 export function attachChat(httpServer) {
   const saved = loadSaved();
   const users = new Map(Object.entries(saved.users || {})); // id -> { id, name, color, lastSeen? }
-  const rooms = saved.rooms?.length ? saved.rooms : DEFAULT_ROOMS.map((r) => ({ ...r }));
+  const rooms = (saved.rooms?.length ? saved.rooms : DEFAULT_ROOMS.map((r) => ({ ...r }))).map((r) => ({
+    icon: '', owner: null, private: false, members: [], createdAt: 0, ...r,
+  }));
   const history = saved.history || {}; // roomId -> messages[]
   const connections = new Map(); // userId -> open socket count
 
@@ -107,7 +139,29 @@ export function attachChat(httpServer) {
       const m = dmMembers(roomId);
       return m.length === 2 && m[0] !== m[1] && m.includes(user.id) && m.every((id) => users.has(id));
     }
-    return rooms.some((r) => r.id === roomId);
+    const room = rooms.find((r) => r.id === roomId);
+    return !!room && (!room.private || room.members.includes(user.id));
+  };
+
+  const visibleRooms = (userId) => rooms.filter((r) => !r.private || r.members.includes(userId));
+  const roomTarget = (room) => (room.private ? io.to(`room:${room.id}`) : io);
+  const joinMembers = (room) => {
+    for (const [, s] of io.sockets.sockets) {
+      if (s.data.user && room.members.includes(s.data.user.id)) s.join(`room:${room.id}`);
+    }
+  };
+
+  // Small centered notices in a room ("Sam added Alex"), stored like messages.
+  const addSystem = (room, text) => {
+    const msg = {
+      id: randomUUID(), cid: '', room: room.id, text, image: null, poll: null, action: false,
+      pinned: false, replyTo: null, system: true,
+      user: { id: 'system', name: 'Parley', color: '#888888' },
+      ts: Date.now(), reactions: {}, edited: false, deleted: false,
+    };
+    (history[room.id] ||= []).push(msg);
+    save();
+    roomTarget(room).emit('message:new', msg);
   };
 
   const publicUsers = () =>
@@ -115,7 +169,7 @@ export function attachChat(httpServer) {
 
   const historyFor = (userId) => {
     const out = {};
-    for (const r of rooms) out[r.id] = history[r.id] || [];
+    for (const r of visibleRooms(userId)) out[r.id] = history[r.id] || [];
     for (const key of Object.keys(history)) {
       if (isDm(key) && dmMembers(key).includes(userId)) out[key] = history[key];
     }
@@ -130,7 +184,10 @@ export function attachChat(httpServer) {
       .replace(/^-+|-+$/g, '')
       .slice(0, 24);
 
-  const findMessage = (room, id) => history[room]?.find((m) => m.id === id);
+  const findMessage = (room, id) => {
+    const m = history[room]?.find((m) => m.id === id);
+    return m && !m.system ? m : undefined; // notices cannot be edited, pinned or reacted to
+  };
   const patchMessage = (room, msg, patch) => {
     Object.assign(msg, patch);
     save();
@@ -147,16 +204,26 @@ export function attachChat(httpServer) {
       const wanted = payload?.id;
       const id = typeof wanted === 'string' && /^[\w-]{6,64}$/.test(wanted) ? wanted : randomUUID();
       const prev = users.get(id);
-      const user = { id, name, color: prev?.color || colorFor(id), status: prev?.status || null };
+      const user = {
+        ...prev,
+        id,
+        name,
+        color: prev?.color || colorFor(id),
+        status: prev?.status || null,
+        bio: prev?.bio || '',
+        pronouns: prev?.pronouns || '',
+        tz: prev?.tz || '',
+        joinedAt: prev?.joinedAt || Date.now(),
+      };
       users.set(id, user);
 
       socket.data.user = user;
       socket.join(`user:${id}`);
-      rooms.forEach((r) => socket.join(`room:${r.id}`));
+      visibleRooms(id).forEach((r) => socket.join(`room:${r.id}`));
       connections.set(id, (connections.get(id) || 0) + 1);
       save();
 
-      ack?.({ user, rooms, users: publicUsers(), history: historyFor(id) });
+      ack?.({ user, rooms: visibleRooms(id), users: publicUsers(), history: historyFor(id) });
       io.emit('users', publicUsers());
     });
 
@@ -180,6 +247,12 @@ export function attachChat(httpServer) {
       if (/^\/me\s+\S/i.test(text)) {
         action = true;
         text = text.replace(/^\/me\s+/i, '');
+      } else {
+        const rolled = runDice(text);
+        if (rolled) {
+          action = true;
+          text = rolled;
+        }
       }
       if (!text && !image && !poll) return ack?.({ error: 'Message is empty.' });
 
@@ -306,6 +379,9 @@ export function attachChat(httpServer) {
         patch.color = p.color;
       }
       if (p?.status !== undefined) patch.status = cleanStatus(p.status);
+      if (p?.bio !== undefined) patch.bio = cleanBio(p.bio);
+      if (p?.pronouns !== undefined) patch.pronouns = cleanPronouns(p.pronouns);
+      if (p?.tz !== undefined) patch.tz = cleanTz(p.tz);
       if (!Object.keys(patch).length) return;
       users.set(user.id, { ...users.get(user.id), ...patch });
       for (const [, s] of io.sockets.sockets) {
@@ -319,26 +395,134 @@ export function attachChat(httpServer) {
       const user = socket.data.user;
       if (!user) return ack?.({ error: 'Join first.' });
       const room = rooms.find((r) => r.id === p?.id);
-      if (!room) return ack?.({ error: 'That room does not exist.' });
+      if (!room || !canAccess(user, room.id)) return ack?.({ error: 'That room does not exist.' });
       room.topic = String(p?.topic || '').trim().slice(0, 120);
       save();
-      io.emit('room:update', room);
+      roomTarget(room).emit('room:update', room);
       ack?.({ room });
     });
 
     socket.on('room:create', (p, ack) => {
       const user = socket.data.user;
       if (!user) return ack?.({ error: 'Join first.' });
-      const id = slug(p?.name);
-      if (!id) return ack?.({ error: 'Use letters or numbers in the room name.' });
-      if (rooms.some((r) => r.id === id)) return ack?.({ error: 'That room already exists.' });
+      const name = slug(p?.name);
+      if (!name) return ack?.({ error: 'Use letters or numbers in the room name.' });
+      if (rooms.some((r) => r.id === name || r.name === name)) return ack?.({ error: 'That room already exists.' });
 
-      const room = { id, name: id, topic: `Started by ${user.name}` };
+      const isPrivate = !!p?.private;
+      const invited = Array.isArray(p?.members) ? p.members : [];
+      const members = isPrivate
+        ? [...new Set([user.id, ...invited.filter((id) => typeof id === 'string' && users.has(id))])].slice(0, MAX_MEMBERS)
+        : [];
+      const icon = GROUP_ICONS.includes(p?.icon) ? p.icon : '';
+      const room = {
+        id: name,
+        name,
+        topic: String(p?.topic || '').trim().slice(0, 120) || `Started by ${user.name}`,
+        icon,
+        owner: user.id,
+        private: isPrivate,
+        members,
+        createdAt: Date.now(),
+      };
       rooms.push(room);
-      for (const [, s] of io.sockets.sockets) if (s.data.user) s.join(`room:${id}`);
+      if (isPrivate) {
+        joinMembers(room);
+        for (const m of members) io.to(`user:${m}`).emit('room:new', room);
+      } else {
+        for (const [, s] of io.sockets.sockets) if (s.data.user) s.join(`room:${name}`);
+        io.emit('room:new', room);
+      }
+      addSystem(room, `${user.name} created ${isPrivate ? 'this private group' : 'this room'}`);
       save();
-      io.emit('room:new', room);
       ack?.({ room });
+    });
+
+    // owner: rename and change the icon
+    socket.on('room:edit', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Join first.' });
+      const room = rooms.find((r) => r.id === p?.id);
+      if (!room || !canAccess(user, room.id)) return ack?.({ error: 'That room does not exist.' });
+      if (room.owner !== user.id) return ack?.({ error: 'Only the owner can change this.' });
+      const before = room.name;
+      if (p?.name !== undefined) {
+        const name = slug(p.name);
+        if (!name) return ack?.({ error: 'Use letters or numbers in the name.' });
+        if (rooms.some((r) => r.id !== room.id && (r.id === name || r.name === name))) {
+          return ack?.({ error: 'That name is taken.' });
+        }
+        room.name = name;
+      }
+      if (p?.icon !== undefined && GROUP_ICONS.includes(p.icon)) room.icon = p.icon;
+      save();
+      roomTarget(room).emit('room:update', room);
+      if (room.name !== before) addSystem(room, `${user.name} renamed #${before} to #${room.name}`);
+      ack?.({ room });
+    });
+
+    socket.on('room:delete', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Join first.' });
+      const room = rooms.find((r) => r.id === p?.id);
+      if (!room) return ack?.({ error: 'That room does not exist.' });
+      if (room.owner !== user.id) return ack?.({ error: 'Only the owner can delete this.' });
+      roomTarget(room).emit('room:remove', { id: room.id });
+      rooms.splice(rooms.indexOf(room), 1);
+      delete history[room.id];
+      for (const [, s] of io.sockets.sockets) s.leave(`room:${room.id}`);
+      save();
+      ack?.({ ok: true });
+    });
+
+    // any member of a private group can invite people
+    socket.on('room:invite', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Join first.' });
+      const room = rooms.find((r) => r.id === p?.id);
+      if (!room || !room.private || !canAccess(user, room.id)) return ack?.({ error: 'That group does not exist.' });
+      const ids = (Array.isArray(p?.ids) ? p.ids : []).filter(
+        (id) => typeof id === 'string' && users.has(id) && !room.members.includes(id)
+      );
+      if (!ids.length) return ack?.({ error: 'Pick someone who is not in the group yet.' });
+      if (room.members.length + ids.length > MAX_MEMBERS) return ack?.({ error: 'That group is full.' });
+      room.members.push(...ids);
+      joinMembers(room);
+      for (const id of ids) io.to(`user:${id}`).emit('room:new', room);
+      save();
+      io.to(`room:${room.id}`).emit('room:update', room);
+      addSystem(room, `${user.name} added ${ids.map((id) => users.get(id).name).join(', ')}`);
+      ack?.({ room });
+    });
+
+    // owner removes someone, or a member leaves
+    const removeMember = (room, userId, text) => {
+      room.members = room.members.filter((id) => id !== userId);
+      for (const [, s] of io.sockets.sockets) if (s.data.user?.id === userId) s.leave(`room:${room.id}`);
+      io.to(`user:${userId}`).emit('room:remove', { id: room.id });
+      save();
+      io.to(`room:${room.id}`).emit('room:update', room);
+      addSystem(room, text);
+    };
+
+    socket.on('room:kick', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Join first.' });
+      const room = rooms.find((r) => r.id === p?.id);
+      if (!room || !room.private || room.owner !== user.id) return ack?.({ error: 'Only the owner can remove people.' });
+      if (p?.userId === user.id || !room.members.includes(p?.userId)) return ack?.({ error: 'That person is not in the group.' });
+      removeMember(room, p.userId, `${user.name} removed ${users.get(p.userId)?.name || 'someone'}`);
+      ack?.({ ok: true });
+    });
+
+    socket.on('room:leave', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Join first.' });
+      const room = rooms.find((r) => r.id === p?.id);
+      if (!room || !room.private || !room.members.includes(user.id)) return ack?.({ error: 'You are not in that group.' });
+      if (room.owner === user.id) return ack?.({ error: 'Owners cannot leave. Delete the group instead.' });
+      removeMember(room, user.id, `${user.name} left`);
+      ack?.({ ok: true });
     });
 
     socket.on('disconnect', () => {

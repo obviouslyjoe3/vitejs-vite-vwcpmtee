@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import Icon from './Icon.jsx';
+import RoomGlyph from './RoomGlyph.jsx';
 import { dmId } from '../useParley.js';
 import { highlight, stripMarks } from '../richText.jsx';
 
@@ -14,7 +15,7 @@ export default function QuickSwitcher({ me, rooms, users, messages, onPick, onCl
 
   const items = useMemo(() => {
     const convs = [
-      ...rooms.map((r) => ({ kind: 'room', id: r.id, label: r.name, sub: r.topic })),
+      ...rooms.map((r) => ({ kind: 'room', id: r.id, room: r, label: r.name, sub: r.private ? 'Private group' : r.topic })),
       ...users
         .filter((u) => u.id !== me.id)
         .map((u) => ({ kind: 'dm', id: dmId(me.id, u.id), label: u.name, sub: u.online ? 'Online' : 'Offline', user: u })),
@@ -83,7 +84,7 @@ export default function QuickSwitcher({ me, rooms, users, messages, onPick, onCl
               onMouseEnter={() => setAt(i)}
               onClick={() => onPick(it.id, it.msg?.id)}
             >
-              {it.kind === 'room' && <span className="room-glyph sm">#</span>}
+              {it.kind === 'room' && <RoomGlyph room={it.room} className="sm" />}
               {it.kind === 'dm' && <Avatar user={it.user} size={26} online={it.user.online} />}
               {it.kind === 'msg' && <span className="room-glyph sm msg"><Icon name="search" size={13} /></span>}
               <span className="sw-text">

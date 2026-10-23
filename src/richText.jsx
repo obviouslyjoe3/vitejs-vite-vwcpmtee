@@ -2,8 +2,10 @@
 // "> quotes", links and @mentions. It builds React elements only (never raw HTML),
 // so message text cannot inject markup.
 
+import { useState } from 'react';
+
 const BASE =
-  /`[^`\n]+`|\*\*[^*\n]+\*\*|~~[^~\n]+~~|(?<!\w)_[^_\n]+_(?!\w)|https?:\/\/[^\s<]+[^\s<.,;:!?)"']/.source;
+  /`[^`\n]+`|\|\|[^|\n]+\|\||\*\*[^*\n]+\*\*|~~[^~\n]+~~|(?<!\w)_[^_\n]+_(?!\w)|https?:\/\/[^\s<]+[^\s<.,;:!?)"']/.source;
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function mentionSource(users) {
@@ -11,11 +13,29 @@ export function mentionSource(users) {
   return names.length ? '@(?:' + names.map(escapeRe).join('|') + ')(?![\\w])' : '';
 }
 
+// ||spoiler|| text: blurred until you click it
+function Spoiler({ children }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span
+      className={shown ? 'spoiler shown' : 'spoiler'}
+      role="button"
+      tabIndex={0}
+      aria-label={shown ? undefined : 'Spoiler, press to reveal'}
+      onClick={() => setShown(true)}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setShown(true)}
+    >
+      {children}
+    </span>
+  );
+}
+
 function inline(text, re, meTag, keyBase) {
   return text.split(re).map((part, i) => {
     if (i % 2 === 0) return part;
     const key = `${keyBase}-${i}`;
     if (part.startsWith('`')) return <code key={key}>{part.slice(1, -1)}</code>;
+    if (part.startsWith('||')) return <Spoiler key={key}>{part.slice(2, -2)}</Spoiler>;
     if (part.startsWith('**')) return <strong key={key}>{part.slice(2, -2)}</strong>;
     if (part.startsWith('~~')) return <s key={key}>{part.slice(2, -2)}</s>;
     if (part.startsWith('_')) return <em key={key}>{part.slice(1, -1)}</em>;
@@ -75,7 +95,7 @@ export function renderRich(text, mentionSrc, meName) {
 
 // Plain-text version for previews and search snippets.
 export const stripMarks = (t = '') =>
-  t.replace(/```/g, '').replace(/\*\*|~~|`/g, '').replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, '$1');
+  t.replace(/```/g, '').replace(/\*\*|~~|`/g, '').replace(/\|\|[^|\n]+\|\|/g, '[spoiler]').replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, '$1');
 
 // Splits text around a search term so the match can be highlighted.
 export function highlight(text, term) {

@@ -59,7 +59,7 @@ const initial = {
 
 const newestTs = (list) => (list?.length ? Math.max(...list.map((m) => m.ts || 0)) : 0);
 const countUnread = (list, since, meId) =>
-  (list || []).filter((m) => m.ts > since && m.user.id !== meId && !m.deleted && !m.pending).length;
+  (list || []).filter((m) => m.ts > since && m.user.id !== meId && !m.deleted && !m.pending && !m.system).length;
 
 function reducer(s, a) {
   switch (a.type) {
@@ -112,6 +112,13 @@ function reducer(s, a) {
         users: a.users,
         me: s.me ? a.users.find((u) => u.id === s.me.id) ?? s.me : s.me,
       };
+    case 'roomRemove': {
+      const rooms = s.rooms.filter((r) => r.id !== a.id);
+      const { [a.id]: _m, ...messages } = s.messages;
+      const { [a.id]: _u, ...unread } = s.unread;
+      const active = s.active === a.id ? rooms[0]?.id ?? null : s.active;
+      return { ...s, rooms, messages, unread, active };
+    }
     case 'roomNew':
       return s.rooms.some((r) => r.id === a.room.id) ? s : { ...s, rooms: [...s.rooms, a.room] };
     case 'active': {
@@ -240,6 +247,7 @@ export function useParley({ onIncoming } = {}) {
     socket.on('users', (users) => dispatch({ type: 'users', users }));
     socket.on('room:new', (room) => dispatch({ type: 'roomNew', room }));
     socket.on('room:update', (room) => dispatch({ type: 'roomUpdate', room }));
+    socket.on('room:remove', ({ id }) => dispatch({ type: 'roomRemove', id }));
     socket.on('message:new', (msg) => {
       incomingRef.current?.(msg);
       dispatch({ type: 'msgNew', msg });
@@ -296,9 +304,9 @@ export function useParley({ onIncoming } = {}) {
   );
 
   const createRoom = useCallback(
-    (name) =>
+    (opts) =>
       new Promise((resolve) => {
-        socket.emit('room:create', { name }, (res) => {
+        socket.emit('room:create', typeof opts === 'string' ? { name: opts } : opts, (res) => {
           if (res?.room) {
             dispatch({ type: 'roomNew', room: res.room });
             dispatch({ type: 'active', id: res.room.id });
@@ -336,6 +344,17 @@ export function useParley({ onIncoming } = {}) {
     vote: (room, id, option) => socket.emit('poll:vote', { room, id, option }),
     setTopic: (id, topic) =>
       new Promise((resolve) => socket.emit('room:topic', { id, topic }, (res) => resolve(res || {}))),
+    updateProfile: (patch) => socket.emit('profile:update', patch),
+    editRoom: (id, patch) =>
+      new Promise((resolve) => socket.emit('room:edit', { id, ...patch }, (res) => resolve(res || {}))),
+    deleteRoom: (id) =>
+      new Promise((resolve) => socket.emit('room:delete', { id }, (res) => resolve(res || {}))),
+    inviteToRoom: (id, ids) =>
+      new Promise((resolve) => socket.emit('room:invite', { id, ids }, (res) => resolve(res || {}))),
+    kickFromRoom: (id, userId) =>
+      new Promise((resolve) => socket.emit('room:kick', { id, userId }, (res) => resolve(res || {}))),
+    leaveRoom: (id) =>
+      new Promise((resolve) => socket.emit('room:leave', { id }, (res) => resolve(res || {}))),
     markAllRead: () => dispatch({ type: 'markAllRead' }),
     createRoom,
   };

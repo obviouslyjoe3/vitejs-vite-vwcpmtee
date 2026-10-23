@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParley } from './useParley.js';
+import { useParley, dmId } from './useParley.js';
 import { loadPrefs, savePrefs, beep, showDesktop, askDesktopPermission } from './notify.js';
 import Join from './components/Join.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Thread from './components/Thread.jsx';
 import Settings from './components/Settings.jsx';
 import QuickSwitcher from './components/QuickSwitcher.jsx';
+import ProfileCard from './components/ProfileCard.jsx';
 import Logo from './components/Logo.jsx';
 import {
   loadAppearance, saveAppearance, applyAppearance,
-  loadConvPrefs, saveConvPrefs, loadDrafts, saveDraft,
+  loadConvPrefs, saveConvPrefs, loadDrafts, saveDraft, loadSaved, saveSaved,
 } from './prefs.js';
 
 const ago = (ts) => {
@@ -29,8 +30,10 @@ export default function App() {
   const [prefs, setPrefs] = useState(loadPrefs);
   const [panel, setPanel] = useState(null); // null | 'info' | 'pins' | 'search'
   const [quickOpen, setQuickOpen] = useState(false);
+  const [profileId, setProfileId] = useState(null);
   const [jump, setJump] = useState(null); // { conv, id }
   const [convPrefs, setConvPrefs] = useState({ starred: [], muted: [] });
+  const [saved, setSaved] = useState([]);
   const drafts = useRef({});
 
   // Latest values for the socket callback (it must not be re-created each render)
@@ -68,7 +71,26 @@ export default function App() {
     if (!meId) return;
     setConvPrefs(loadConvPrefs(meId));
     drafts.current = loadDrafts(meId);
+    setSaved(loadSaved(meId));
   }, [meId]);
+
+  const toggleSaved = (msg) => {
+    if (!meId) return;
+    setSaved((cur) => {
+      const next = cur.some((x) => x.id === msg.id)
+        ? cur.filter((x) => x.id !== msg.id)
+        : [
+            ...cur,
+            {
+              id: msg.id, room: msg.room, ts: msg.ts, savedAt: Date.now(),
+              text: (msg.text || (msg.poll ? `Poll: ${msg.poll.question}` : '')).slice(0, 300),
+              user: { id: msg.user.id, name: msg.user.name, color: msg.user.color },
+            },
+          ];
+      saveSaved(meId, next);
+      return next;
+    });
+  };
 
   const togglePref = (kind, id) => {
     if (!id || !meId) return;
@@ -129,9 +151,11 @@ export default function App() {
       };
     }
     const room = p.rooms.find((r) => r.id === p.active);
-    return room
-      ? { id: room.id, kind: 'room', title: room.name, subtitle: room.topic, topic: room.topic }
-      : null;
+    if (!room) return null;
+    const subtitle = room.private
+      ? `Private group · ${room.members.length} ${room.members.length === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`
+      : room.topic;
+    return { id: room.id, kind: 'room', title: room.name, subtitle, topic: room.topic, room };
   }, [p.me, p.active, p.users, p.rooms]);
 
   if (p.restoring) {
@@ -200,6 +224,15 @@ export default function App() {
         onPanel={setPanel}
         starred={starred}
         muted={muted}
+        saved={saved}
+        onSave={toggleSaved}
+        onProfile={(u) => setProfileId(u.id)}
+        onEditRoom={p.editRoom}
+        onDeleteRoom={p.deleteRoom}
+        onInvite={p.inviteToRoom}
+        onKick={p.kickFromRoom}
+        onLeaveRoom={p.leaveRoom}
+        onOpenSaved={(item) => select(item.room, item.id)}
         onStar={() => togglePref('starred', p.active)}
         onMute={() => togglePref('muted', p.active)}
         onSetTopic={p.setTopic}
@@ -220,10 +253,30 @@ export default function App() {
           onAppearance={setAppearance}
           onColor={p.updateColor}
           onStatus={p.updateStatus}
+          onProfile={p.updateProfile}
           onPrefs={changePrefs}
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {profileId && (() => {
+        const person = p.users.find((u) => u.id === profileId);
+        if (!person) return null;
+        return (
+          <ProfileCard
+            user={person}
+            me={p.me}
+            onClose={() => setProfileId(null)}
+            onMessage={(u) => {
+              setProfileId(null);
+              select(dmId(p.me.id, u.id));
+            }}
+            onEdit={() => {
+              setProfileId(null);
+              setSettingsOpen(true);
+            }}
+          />
+        );
+      })()}
       {quickOpen && (
         <QuickSwitcher
           me={p.me}

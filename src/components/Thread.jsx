@@ -4,6 +4,7 @@ import Composer from './Composer.jsx';
 import Avatar from './Avatar.jsx';
 import Icon from './Icon.jsx';
 import Panel from './Panel.jsx';
+import RoomGlyph from './RoomGlyph.jsx';
 import { PollDialog } from './Poll.jsx';
 import { mentionSource } from '../richText.jsx';
 
@@ -21,7 +22,8 @@ const dayLabel = (ts) => {
 
 export default function Thread({
   conv, me, users, messages, typers, offline, dividerTs, jump, draft, panel,
-  starred, muted,
+  starred, muted, saved, onSave, onOpenSaved, onProfile,
+  onEditRoom, onDeleteRoom, onInvite, onKick, onLeaveRoom,
   onDraft, onPanel, onStar, onMute, onSetTopic, onJumped,
   onBack, onSend, onTyping, onReact, onEdit, onDelete, onPin, onVote,
 }) {
@@ -33,9 +35,16 @@ export default function Thread({
   const [pollOpen, setPollOpen] = useState(false);
   const [away, setAway] = useState(false);
   const [fresh, setFresh] = useState(0);
+  const [editId, setEditId] = useState(null);
 
   const byId = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users]);
   const mentionSrc = useMemo(() => mentionSource(users), [users]);
+  const savedIds = useMemo(() => new Set(saved.map((x) => x.id)), [saved]);
+  const nameOf = (id) => byId[id]?.name;
+  const editLast = () => {
+    const mine = [...messages].reverse().find((m) => m.user.id === me.id && m.text && !m.poll && !m.deleted && !m.pending && !m.failed);
+    if (mine) setEditId(mine.id);
+  };
   const pinCount = messages.filter((m) => m.pinned && !m.deleted).length;
 
   useLayoutEffect(() => {
@@ -101,6 +110,14 @@ export default function Thread({
     const prev = messages[i - 1];
     const newDay = !prev || new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
     if (newDay) rows.push(<div className="day" key={`d${m.id}`}><span>{dayLabel(m.ts)}</span></div>);
+    if (m.system) {
+      rows.push(
+        <div className="notice" key={m.id} id={'m-' + m.id}>
+          <span>{m.text}</span>
+        </div>
+      );
+      return;
+    }
     let showDivider = false;
     if (!dividerDone && dividerTs && m.ts > dividerTs && m.user.id !== me.id) {
       dividerDone = true;
@@ -112,7 +129,7 @@ export default function Thread({
       );
     }
     const grouped =
-      !newDay && !showDivider && !m.replyTo && !m.poll && !prev.poll && prev.user.id === m.user.id && m.ts - prev.ts < GROUP_MS;
+      !newDay && !showDivider && !m.replyTo && !m.poll && !prev.poll && !prev.system && prev.user.id === m.user.id && m.ts - prev.ts < GROUP_MS;
     rows.push(
       <Message
         key={m.id}
@@ -121,6 +138,12 @@ export default function Thread({
         author={byId[m.user.id] || m.user}
         grouped={grouped}
         mentionSrc={mentionSrc}
+        saved={savedIds.has(m.id)}
+        nameOf={nameOf}
+        forceEdit={editId === m.id}
+        onEditStarted={() => setEditId(null)}
+        onSave={onSave}
+        onProfile={onProfile}
         onReact={onReact}
         onReply={setReplyTo}
         onEdit={onEdit}
@@ -144,7 +167,7 @@ export default function Thread({
           {conv.kind === 'dm' ? (
             <Avatar user={conv.user} size={40} online={conv.user.online} />
           ) : (
-            <span className="room-glyph big">#</span>
+            <RoomGlyph room={conv.room} className="big" />
           )}
           <div className="thread-title">
             <h1>{conv.title}</h1>
@@ -163,6 +186,10 @@ export default function Thread({
             </button>
             <button className={`tool ${panel === 'search' ? 'lit' : ''}`} onClick={() => togglePanel('search')} aria-label="Search this conversation" aria-pressed={panel === 'search'} title="Search">
               <Icon name="search" />
+            </button>
+            <button className={`tool pins-btn ${panel === 'saved' ? 'lit' : ''}`} onClick={() => togglePanel('saved')} aria-label={`Saved messages (${saved.length})`} aria-pressed={panel === 'saved'} title="Saved messages">
+              <Icon name="bookmark" />
+              {saved.length > 0 && <span className="count">{saved.length}</span>}
             </button>
             <button className={`tool pins-btn ${panel === 'pins' ? 'lit' : ''}`} onClick={() => togglePanel('pins')} aria-label={`Pinned messages (${pinCount})`} aria-pressed={panel === 'pins'} title="Pinned messages">
               <Icon name="pin" />
@@ -225,6 +252,7 @@ export default function Thread({
           draft={draft}
           onDraft={onDraft}
           onCancelReply={() => setReplyTo(null)}
+          onEditLast={editLast}
           onOpenPoll={() => setPollOpen(true)}
           onSend={(payload) => {
             onSend({ ...payload, replyTo });
@@ -251,6 +279,18 @@ export default function Thread({
             if (window.matchMedia('(max-width: 900px)').matches) onPanel(null);
           }}
           onUnpin={onPin}
+          saved={saved}
+          onOpenSaved={(item) => {
+            onOpenSaved(item);
+            if (window.matchMedia('(max-width: 900px)').matches) onPanel(null);
+          }}
+          onRemoveSaved={onSave}
+          onProfile={onProfile}
+          onEditRoom={onEditRoom}
+          onDeleteRoom={onDeleteRoom}
+          onInvite={onInvite}
+          onKick={onKick}
+          onLeaveRoom={onLeaveRoom}
           onClose={() => onPanel(null)}
         />
       )}

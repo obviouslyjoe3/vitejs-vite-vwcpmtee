@@ -56,3 +56,15 @@ export const saveDraft = (meId, conv, text) => {
   else delete all[conv];
   set(draftKey(meId), all);
 };
+
+// Saved messages ("save for later"): snapshots kept per person on this browser.
+const savedKey = (meId) => `parley:saved:${meId}`;
+export const loadSaved = (meId) => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(savedKey(meId)));
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+};
+export const saveSaved = (meId, list) => set(savedKey(meId), list);

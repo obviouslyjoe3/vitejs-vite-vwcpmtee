@@ -11,11 +11,17 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 
 ## Features
 - Rooms (create your own, edit the topic) and private direct messages, online or offline
+- **Private groups**: invite-only rooms with an owner. Members can add people; the owner can rename, change the icon, remove members or delete the group. Non-members never receive the group or its messages. Groups get an emoji icon (or #), and small notices show who created, added, removed or renamed
+- **Profiles**: pronouns, a short bio and a time zone (Settings > Profile). Click any avatar or name, or anyone in a member list, to open their profile card with local time, status, last seen, member-since and a Message button
 - Replies, edit and delete your own messages, 20 emoji reactions
 - **Polls** (single or multiple choice, live votes) and **pinned messages** per conversation
 - **Search** inside a conversation, plus a **quick switcher** (Ctrl/Cmd+K) that jumps to rooms, people or any message
 - Formatting: **bold**, _italic_, ~~strike~~, `code`, code blocks, > quotes, links; toolbar and Ctrl+B / Ctrl+I
-- Slash commands: `/me`, `/shrug`, `/poll`
+- Slash commands: `/me`, `/shrug`, `/poll`, `/roll` (or `/roll 2d6`), `/flip`. Dice are rolled on the server so results can't be faked
+- ||Spoiler text|| stays blurred until clicked; `:fire:` style emoji shortcodes with autocomplete
+- **Saved messages**: bookmark any message from the ⋯ menu and find it again across all conversations
+- Press **↑** in an empty composer to edit your last message; hover a reaction to see who gave it
+- Export any conversation as a `.txt` file from the Details panel
 - @mentions with autocomplete; image sharing by paperclip or paste
 - Unread counts that survive reloads, a "New" divider, jump-to-latest, mark all read
 - Star and mute conversations; unsent drafts are kept per conversation

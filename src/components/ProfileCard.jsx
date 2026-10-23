@@ -1,0 +1,108 @@
+import { useEffect } from 'react';
+import Avatar from './Avatar.jsx';
+import Icon from './Icon.jsx';
+
+const ago = (ts) => {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} h ago`;
+  return `${Math.floor(h / 24)} d ago`;
+};
+
+export const localTime = (tz) => {
+  if (!tz) return null;
+  try {
+    return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: tz });
+  } catch {
+    return null;
+  }
+};
+
+const since = (ts) =>
+  ts ? new Date(ts).toLocaleDateString([], { month: 'long', year: 'numeric' }) : null;
+
+export function ProfileFacts({ user }) {
+  const time = localTime(user.tz);
+  return (
+    <>
+      {user.pronouns && <p className="pronouns">{user.pronouns}</p>}
+      {user.status && (
+        <p className="status-line">
+          {user.status.emoji} {user.status.text}
+        </p>
+      )}
+      {user.bio && <p className="bio">{user.bio}</p>}
+      {time && (
+        <p className="fact">
+          <Icon name="clock" size={14} /> {time} local time · {user.tz.replace(/_/g, ' ')}
+        </p>
+      )}
+    </>
+  );
+}
+
+export default function ProfileCard({ user, me, onMessage, onEdit, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const mine = user.id === me.id;
+  const joined = since(user.joinedAt);
+
+  return (
+    <div className="overlay" onMouseDown={onClose}>
+      <div
+        className="dialog profile-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${user.name}'s profile`}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button className="icon-btn close" onClick={onClose} aria-label="Close profile">
+          <Icon name="close" size={16} />
+        </button>
+        <div className="profile-top">
+          <Avatar user={user} size={84} online={mine ? true : user.online} />
+          <h2>
+            {user.name}
+            {mine && <small> (you)</small>}
+          </h2>
+          <p className="presence-line">
+            {mine || user.online
+              ? 'Online now'
+              : user.lastSeen
+              ? `Last seen ${ago(user.lastSeen)}`
+              : 'Offline'}
+          </p>
+        </div>
+        <div className="profile-body">
+          <ProfileFacts user={user} />
+          {joined && (
+            <p className="fact">
+              <Icon name="user" size={14} /> Member since {joined}
+            </p>
+          )}
+          {!user.bio && !user.pronouns && !user.status && !user.tz && (
+            <p className="fact muted-note">{mine ? 'Add a bio, pronouns and your time zone in Settings.' : 'No profile details yet.'}</p>
+          )}
+        </div>
+        <div className="profile-actions">
+          {mine ? (
+            <button className="primary" onClick={onEdit}>
+              Edit profile
+            </button>
+          ) : (
+            <button className="primary" onClick={() => onMessage(user)}>
+              <Icon name="send" size={15} /> Message
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

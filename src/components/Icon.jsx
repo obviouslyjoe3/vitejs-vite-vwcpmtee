@@ -28,6 +28,11 @@ const PATHS = {
   italic: <path d="M14 5h-4M14 19h-4M13 5l-2 14" />,
   code: <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12" />,
   strike: <path d="M5 12h14M16 7c-.5-1.5-2-2.5-4-2.5-2.5 0-4 1.2-4 3 0 1.5 1 2.2 4 3M8 17c.5 1.5 2 2.5 4 2.5 2.5 0 4-1.2 4-3" />,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
+  user: <><circle cx="12" cy="8" r="4" /><path d="M4 20c1-4 4-6 8-6s7 2 8 6" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  bookmark: <path d="M7 4h10v16l-5-3.5L7 20z" />,
+  download: <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />,
   command: <path d="M9 9V6a3 3 0 1 0-3 3zM9 9h6M9 9v6M15 9V6a3 3 0 1 1 3 3zM15 9v6M9 15H6a3 3 0 1 0 3 3zM15 15h3a3 3 0 1 1-3 3zM9 15h6" />,
 };
 

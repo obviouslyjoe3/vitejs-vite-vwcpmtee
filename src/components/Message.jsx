@@ -19,8 +19,8 @@ export const jumpTo = (id) => {
 };
 
 export default function Message({
-  msg, me, author, grouped, mentionSrc,
-  onReact, onReply, onEdit, onDelete, onPin, onVote, onOpenImage,
+  msg, me, author, grouped, mentionSrc, saved, nameOf, forceEdit,
+  onReact, onReply, onEdit, onDelete, onPin, onVote, onSave, onProfile, onOpenImage, onEditStarted,
 }) {
   const [picking, setPicking] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -55,6 +55,13 @@ export default function Message({
     setEditing(true);
     setMenu(false);
   };
+  // Up-arrow in an empty composer asks the newest message of yours to open for editing
+  useEffect(() => {
+    if (forceEdit && canAct && !editing) {
+      startEdit();
+      onEditStarted?.();
+    }
+  }, [forceEdit]);
   const saveEdit = () => {
     const value = draft.trim();
     if (value && value !== msg.text) onEdit(msg.id, value);
@@ -80,13 +87,27 @@ export default function Message({
       id={'m-' + msg.id}
       className={`msg ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''} ${msg.pinned ? 'pinned' : ''}`}
     >
-      <div className="msg-side">{!grouped && <Avatar user={author} size={34} />}</div>
+      <div className="msg-side">
+        {!grouped && (
+          <button className="who-btn" onClick={() => onProfile(author)} aria-label={`View ${author.name}'s profile`}>
+            <Avatar user={author} size={34} />
+          </button>
+        )}
+      </div>
 
       <div className="msg-main">
         {!grouped && (
           <div className="msg-meta">
-            {<strong style={{ '--who': author.color }}>{mine ? 'You' : author.name}</strong>}
+            <button className="who-btn name" onClick={() => onProfile(author)}>
+              <strong style={{ '--who': author.color }}>{mine ? 'You' : author.name}</strong>
+            </button>
+            {author.pronouns && <span className="pronoun-tag">{author.pronouns}</span>}
             <time>{clock(msg.ts)}</time>
+            {saved && (
+              <span className="pin-flag saved-flag" title="Saved by you">
+                <Icon name="bookmark" size={12} /> Saved
+              </span>
+            )}
             {msg.pinned && (
               <span className="pin-flag" title={msg.pinnedBy ? `Pinned by ${msg.pinnedBy}` : 'Pinned'}>
                 <Icon name="pin" size={12} /> Pinned
@@ -220,6 +241,9 @@ export default function Message({
                     <button role="menuitem" onClick={() => { onPin(msg.id); setMenu(false); }}>
                       <Icon name="pin" size={15} /> {msg.pinned ? 'Unpin message' : 'Pin to conversation'}
                     </button>
+                    <button role="menuitem" onClick={() => { onSave(msg); setMenu(false); }}>
+                      <Icon name="bookmark" size={15} /> {saved ? 'Remove from saved' : 'Save for later'}
+                    </button>
                     {msg.text && (
                       <button role="menuitem" onClick={copy}>
                         <Icon name="copy" size={15} /> Copy text
@@ -253,7 +277,7 @@ export default function Message({
                 className={ids.includes(me.id) ? 'pill on' : 'pill'}
                 aria-pressed={ids.includes(me.id)}
                 onClick={() => onReact(msg.id, emoji)}
-                title={ids.length + (ids.length === 1 ? ' person' : ' people')}
+                title={ids.map((id) => (id === me.id ? 'You' : nameOf?.(id) || 'Someone')).join(', ')}
               >
                 {emoji} {ids.length}
               </button>

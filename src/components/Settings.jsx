@@ -17,9 +17,36 @@ function Segmented({ label, value, options, onChange }) {
   );
 }
 
-export default function Settings({ me, appearance, prefs, onAppearance, onColor, onStatus, onPrefs, onClose }) {
+const browserTz = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch {
+    return '';
+  }
+};
+const zones = () => {
+  try {
+    return Intl.supportedValuesOf('timeZone');
+  } catch {
+    return [];
+  }
+};
+
+export default function Settings({ me, appearance, prefs, onAppearance, onColor, onStatus, onProfile, onPrefs, onClose }) {
   const [emoji, setEmoji] = useState(me.status?.emoji || '');
   const [text, setText] = useState(me.status?.text || '');
+  const [bio, setBio] = useState(me.bio || '');
+  const [pronouns, setPronouns] = useState(me.pronouns || '');
+  const [tz, setTz] = useState(me.tz || '');
+  const [saved, setSaved] = useState(false);
+  const zoneList = zones();
+  const dirty = bio.trim() !== (me.bio || '') || pronouns.trim() !== (me.pronouns || '') || tz !== (me.tz || '');
+  const saveProfile = (e) => {
+    e.preventDefault();
+    onProfile({ bio: bio.trim(), pronouns: pronouns.trim(), tz });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -62,6 +89,36 @@ export default function Settings({ me, appearance, prefs, onAppearance, onColor,
             ))}
             {me.status && <button className="chip ghost" onClick={clearStatus}>Clear status</button>}
           </div>
+        </section>
+
+        <section>
+          <h3>Profile</h3>
+          <form className="profile-form" onSubmit={saveProfile}>
+            <label className="field-label" htmlFor="pronouns">Pronouns</label>
+            <input id="pronouns" className="field" value={pronouns} maxLength={20} onChange={(e) => setPronouns(e.target.value)} placeholder="e.g. she/her, he/him, they/them" />
+            <label className="field-label" htmlFor="bio">About you</label>
+            <textarea id="bio" className="field" rows={3} value={bio} maxLength={160} onChange={(e) => setBio(e.target.value)} placeholder="A line or two about you" />
+            <p className="hint count-hint">{bio.length}/160</p>
+            <label className="field-label" htmlFor="tz">Time zone</label>
+            {zoneList.length > 0 ? (
+              <select id="tz" className="field" value={tz} onChange={(e) => setTz(e.target.value)}>
+                <option value="">Not shown</option>
+                {tz && !zoneList.includes(tz) && <option value={tz}>{tz}</option>}
+                {zoneList.map((z) => (
+                  <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+            ) : (
+              <input id="tz" className="field" value={tz} onChange={(e) => setTz(e.target.value)} placeholder="e.g. America/Detroit" />
+            )}
+            <div className="inline-actions">
+              <button className="primary" type="submit" disabled={!dirty}>Save profile</button>
+              {browserTz() && tz !== browserTz() && (
+                <button className="chip" type="button" onClick={() => setTz(browserTz())}>Use {browserTz().replace(/_/g, ' ')}</button>
+              )}
+              {saved && <span className="saved">Saved</span>}
+            </div>
+          </form>
         </section>
 
         <section>

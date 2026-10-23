@@ -12,6 +12,7 @@ export default function Join({ status, error, onJoin }) {
 
   return (
     <main className="join">
+      <div className="join-side">
       <div className="join-card">
         <Logo size={64} />
         <h1>parley</h1>
@@ -39,6 +40,29 @@ export default function Join({ status, error, onJoin }) {
           </button>
         </form>
       </div>
+      </div>
+
+      <aside className="join-stage" aria-hidden="true">
+        <div className="preview-win">
+          <div className="preview-head">
+            <span>#</span> design-crit <small>4 online</small>
+          </div>
+          <div className="preview-body">
+            <div className="pv">
+              <i style={{ background: '#0F8F73' }}>M</i>
+              <p>Pushed the new sidebar. Thoughts?</p>
+            </div>
+            <div className="pv">
+              <i style={{ background: '#C2347A' }}>R</i>
+              <p>Much calmer. The unread badges read well now.</p>
+            </div>
+            <div className="pv-react">🔥 3</div>
+            <div className="pv mine">
+              <p>Shipping it after lunch 🚀</p>
+            </div>
+          </div>
+        </div>
+      </aside>
     </main>
   );
 }
