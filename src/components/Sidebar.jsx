@@ -1,16 +1,24 @@
 import { useState } from 'react';
 import Avatar from './Avatar.jsx';
 import Logo from './Logo.jsx';
+import Icon from './Icon.jsx';
 import { dmId } from '../useParley.js';
+import { stripMarks } from '../richText.jsx';
 
 const previewOf = (list, meId) => {
   const last = list?.[list.length - 1];
   if (!last) return '';
-  return (last.user.id === meId ? 'You: ' : '') + last.text;
+  const body = last.deleted
+    ? 'Message deleted'
+    : stripMarks(last.text) || (last.poll ? 'Poll: ' + last.poll.question : last.image ? 'Photo' : '');
+  return (last.user.id === meId ? 'You: ' : '') + body;
 };
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
+
 export default function Sidebar({
-  me, rooms, users, messages, unread, active, status, onSelect, onCreateRoom, onLeave,
+  me, rooms, users, messages, unread, active, status, starred, muted, anyUnread,
+  onSelect, onCreateRoom, onLeave, onOpenSettings, onQuick, onMarkAllRead,
 }) {
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
@@ -18,14 +26,16 @@ export default function Sidebar({
   const [roomError, setRoomError] = useState('');
   const q = query.trim().toLowerCase();
 
-  const visibleRooms = rooms.filter((r) => r.name.includes(q));
+  const roomRows = rooms
+    .filter((r) => r.name.includes(q))
+    .map((r) => ({ kind: 'room', id: r.id, r, list: messages[r.id] }));
 
-  const people = users
+  const personRows = users
     .filter((u) => u.id !== me.id && u.name.toLowerCase().includes(q))
     .map((u) => {
       const id = dmId(me.id, u.id);
       const list = messages[id];
-      return { u, id, list, last: list?.[list.length - 1] };
+      return { kind: 'dm', id, u, list, last: list?.[list.length - 1] };
     })
     .sort(
       (a, b) =>
@@ -33,6 +43,9 @@ export default function Sidebar({
         Number(b.u.online) - Number(a.u.online) ||
         a.u.name.localeCompare(b.u.name)
     );
+
+  const starredRows = [...roomRows, ...personRows].filter((x) => starred.includes(x.id));
+  const rest = (rows) => rows.filter((x) => !starred.includes(x.id));
 
   const submitRoom = async (e) => {
     e.preventDefault();
@@ -43,6 +56,38 @@ export default function Sidebar({
     setAdding(false);
   };
 
+  const row = (x) => {
+    const n = unread[x.id] || 0;
+    const isMuted = muted.includes(x.id);
+    return (
+      <li key={x.id}>
+        <button
+          className={`conv ${active === x.id ? 'active' : ''} ${n && !isMuted ? 'has-unread' : ''} ${isMuted ? 'muted' : ''}`}
+          onClick={() => onSelect(x.id)}
+          aria-current={active === x.id ? 'true' : undefined}
+        >
+          {x.kind === 'room' ? (
+            <span className="room-glyph">#</span>
+          ) : (
+            <Avatar user={x.u} size={36} online={x.u.online} />
+          )}
+          <span className="conv-text">
+            <span className="conv-name">
+              {x.kind === 'room' ? x.r.name : x.u.name}
+              {x.kind === 'dm' && x.u.status?.emoji && <span className="conv-status">{x.u.status.emoji}</span>}
+            </span>
+            <span className="conv-preview">
+              {previewOf(x.list, me.id) ||
+                (x.kind === 'room' ? x.r.topic : x.u.status?.text || (x.u.online ? 'Online' : 'Offline'))}
+            </span>
+          </span>
+          {isMuted && <Icon name="bellOff" size={14} className="mute-mark" />}
+          {n > 0 && <span className={isMuted ? 'badge quiet' : 'badge'}>{n}</span>}
+        </button>
+      </li>
+    );
+  };
+
   return (
     <aside className="sidebar">
       <header className="side-head">
@@ -51,20 +96,46 @@ export default function Sidebar({
         <span
           className={`conn ${status}`}
           title={status === 'connected' ? 'Connected' : 'Reconnecting…'}
+          role="status"
+          aria-label={status === 'connected' ? 'Connected' : 'Reconnecting'}
         />
+        <button
+          className="side-icon"
+          onClick={onMarkAllRead}
+          disabled={!anyUnread}
+          aria-label="Mark everything as read"
+          title="Mark everything as read"
+        >
+          <Icon name="checks" />
+        </button>
       </header>
+
+      <button className="quick" onClick={onQuick}>
+        <Icon name="search" size={16} />
+        <span>Jump to…</span>
+        <kbd>{isMac ? '⌘K' : 'Ctrl K'}</kbd>
+      </button>
 
       <div className="search">
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search rooms and people"
-          aria-label="Search rooms and people"
+          placeholder="Filter the list"
+          aria-label="Filter rooms and people"
         />
       </div>
 
       <div className="side-scroll">
+        {starredRows.length > 0 && (
+          <section>
+            <div className="side-title">
+              <h3>Starred</h3>
+            </div>
+            <ul className="convs">{starredRows.map(row)}</ul>
+          </section>
+        )}
+
         <section>
           <div className="side-title">
             <h3>Rooms</h3>
@@ -74,7 +145,7 @@ export default function Sidebar({
               aria-label="Create a room"
               aria-expanded={adding}
             >
-              {adding ? '×' : '+'}
+              <Icon name={adding ? 'close' : 'plus'} size={15} />
             </button>
           </div>
 
@@ -95,65 +166,38 @@ export default function Sidebar({
             </form>
           )}
 
-          <ul className="convs">
-            {visibleRooms.map((r) => (
-              <li key={r.id}>
-                <button
-                  className={`conv ${active === r.id ? 'active' : ''}`}
-                  onClick={() => onSelect(r.id)}
-                  aria-current={active === r.id ? 'true' : undefined}
-                >
-                  <span className="room-glyph">#</span>
-                  <span className="conv-text">
-                    <span className="conv-name">{r.name}</span>
-                    <span className="conv-preview">
-                      {previewOf(messages[r.id], me.id) || r.topic}
-                    </span>
-                  </span>
-                  {unread[r.id] > 0 && <span className="badge">{unread[r.id]}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <ul className="convs">{rest(roomRows).map(row)}</ul>
+          {q && roomRows.length === 0 && <p className="side-empty">No rooms match.</p>}
         </section>
 
         <section>
           <div className="side-title">
             <h3>People</h3>
           </div>
-          {people.length === 0 && (
+          {personRows.length === 0 && (
             <p className="side-empty">
-              {q ? 'Nobody matches that search.' : 'Open this page in another tab or device to meet someone.'}
+              {q ? 'Nobody matches that.' : 'Open this page in another tab or device to meet someone.'}
             </p>
           )}
-          <ul className="convs">
-            {people.map(({ u, id, list }) => (
-              <li key={u.id}>
-                <button
-                  className={`conv ${active === id ? 'active' : ''}`}
-                  onClick={() => onSelect(id)}
-                  aria-current={active === id ? 'true' : undefined}
-                >
-                  <Avatar user={u} size={38} online={u.online} />
-                  <span className="conv-text">
-                    <span className="conv-name">{u.name}</span>
-                    <span className="conv-preview">
-                      {previewOf(list, me.id) || (u.online ? 'Online' : 'Offline')}
-                    </span>
-                  </span>
-                  {unread[id] > 0 && <span className="badge">{unread[id]}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <ul className="convs">{rest(personRows).map(row)}</ul>
         </section>
       </div>
 
       <footer className="side-foot">
-        <Avatar user={me} size={34} online />
-        <span className="me">{me.name}</span>
-        <button className="text-btn" onClick={onLeave}>
-          Switch name
+        <button className="me-btn" onClick={onOpenSettings} aria-label="Open settings and profile">
+          <Avatar user={me} size={34} online />
+          <span className="me-text">
+            <span className="me">{me.name}</span>
+            <span className="me-status">
+              {me.status ? `${me.status.emoji} ${me.status.text}`.trim() : 'Set a status'}
+            </span>
+          </span>
+        </button>
+        <button className="side-icon" onClick={onOpenSettings} aria-label="Settings" title="Settings">
+          <Icon name="settings" />
+        </button>
+        <button className="side-icon" onClick={onLeave} aria-label="Switch name" title="Switch name">
+          <Icon name="logout" />
         </button>
       </footer>
     </aside>

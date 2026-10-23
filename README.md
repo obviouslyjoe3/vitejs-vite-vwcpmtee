@@ -10,11 +10,20 @@ Open the URL in two tabs (or on two devices) and join with different names.
 The chat server runs inside Vite's dev server, so there is nothing else to start.
 
 ## Features
-- Chat rooms, plus create your own
-- Private direct messages with anyone who has joined (online or not)
-- Live presence, typing indicators, unread badges
-- Emoji reactions, link detection, automatic reconnect
-- Messages are saved on the server in `.data/parley.json`
+- Rooms (create your own, edit the topic) and private direct messages, online or offline
+- Replies, edit and delete your own messages, 20 emoji reactions
+- **Polls** (single or multiple choice, live votes) and **pinned messages** per conversation
+- **Search** inside a conversation, plus a **quick switcher** (Ctrl/Cmd+K) that jumps to rooms, people or any message
+- Formatting: **bold**, _italic_, ~~strike~~, `code`, code blocks, > quotes, links; toolbar and Ctrl+B / Ctrl+I
+- Slash commands: `/me`, `/shrug`, `/poll`
+- @mentions with autocomplete; image sharing by paperclip or paste
+- Unread counts that survive reloads, a "New" divider, jump-to-latest, mark all read
+- Star and mute conversations; unsent drafts are kept per conversation
+- Custom status (emoji and text); pick your avatar color
+- Appearance: light, dark or system; five accents; bubble or flat message style; three text sizes
+- Alerts for DMs and mentions: sound, desktop notifications, unread count in the tab title
+- Live presence, last-seen times, typing indicators, automatic reconnect
+- Messages saved on the server in `.data/parley.json`
 
 ## Notes
 - Each browser tab is its own person (identity lives in sessionStorage), which makes
