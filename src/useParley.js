@@ -52,6 +52,8 @@ const initial = {
   friends: [], // user ids
   incoming: [], // ids of people who asked to be your friend
   outgoing: [], // ids of people you asked
+  blocked: [], // [{ id, name, color }] people you blocked
+  privacy: { requests: 'everyone', showOnline: true },
   messages: {}, // conversationId -> message[]
   unread: {},
   lastRead: {}, // conversationId -> ts of newest message seen
@@ -62,8 +64,10 @@ const initial = {
 };
 
 const newestTs = (list) => (list?.length ? Math.max(...list.map((m) => m.ts || 0)) : 0);
-const countUnread = (list, since, meId) =>
-  (list || []).filter((m) => m.ts > since && m.user.id !== meId && !m.deleted && !m.pending && !m.system).length;
+const countUnread = (list, since, meId, hidden = []) =>
+  (list || []).filter(
+    (m) => m.ts > since && m.user.id !== meId && !m.deleted && !m.pending && !m.system && !hidden.includes(m.user.id)
+  ).length;
 
 function reducer(s, a) {
   switch (a.type) {
@@ -73,6 +77,10 @@ function reducer(s, a) {
       return { ...s, error: a.error };
     case 'reset':
       return { ...initial, status: s.status, error: a.error || '' };
+    case 'blocked':
+      return { ...s, blocked: a.list };
+    case 'privacy':
+      return { ...s, privacy: a.privacy };
     case 'friends':
       return { ...s, friends: a.friends, incoming: a.incoming, outgoing: a.outgoing };
     case 'userUpdate': {
@@ -94,15 +102,16 @@ function reducer(s, a) {
       const valid =
         back && (a.rooms.some((r) => r.id === back) || (back.startsWith('dm:') && back.includes(a.me.id)));
       const active = s.active ?? (valid ? back : null) ?? a.rooms[0]?.id ?? null;
+      const hide = (a.blocked || []).map((b) => b.id);
       const lastRead = { ...a.readMap, ...s.lastRead };
       const unread = {};
       for (const [conv, list] of Object.entries(a.history)) {
         if (lastRead[conv] === undefined) lastRead[conv] = newestTs(list); // first visit: nothing is "new"
-        unread[conv] = conv === active ? 0 : countUnread(list, lastRead[conv], a.me.id);
+        unread[conv] = conv === active ? 0 : countUnread(list, lastRead[conv], a.me.id, hide);
       }
       const dividers = { ...s.dividers };
       if (active && s.active === null) {
-        const n = countUnread(a.history[active], lastRead[active], a.me.id);
+        const n = countUnread(a.history[active], lastRead[active], a.me.id, hide);
         dividers[active] = n ? lastRead[active] : null;
       }
       if (active) lastRead[active] = newestTs(a.history[active]);
@@ -114,6 +123,8 @@ function reducer(s, a) {
         friends: a.friends?.friends || [],
         incoming: a.friends?.incoming || [],
         outgoing: a.friends?.outgoing || [],
+        blocked: a.blocked || [],
+        privacy: a.privacy || initial.privacy,
         messages: a.history,
         active,
         unread,
@@ -178,8 +189,9 @@ function reducer(s, a) {
       const at = m.cid ? list.findIndex((x) => x.pending && x.cid === m.cid) : -1;
       const next = at >= 0 ? list.map((x, i) => (i === at ? m : x)) : [...list, m];
       const mine = m.user.id === s.me?.id;
+      const hidden = s.blocked.some((b) => b.id === m.user.id);
       const unread =
-        !mine && m.room !== s.active
+        !mine && !hidden && m.room !== s.active
           ? { ...s.unread, [m.room]: (s.unread[m.room] || 0) + 1 }
           : s.unread;
       const roomTyping = { ...(s.typing[m.room] || {}) };
@@ -253,6 +265,8 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
       users: res.users,
       history: res.history,
       friends: res.friends,
+      blocked: res.blocked,
+      privacy: res.privacy,
       readMap: loadReadMap(res.user.id),
       preferred: readActive(),
     });
@@ -291,6 +305,8 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
     socket.on('users', (users) => dispatch({ type: 'users', users }));
     socket.on('user:update', (user) => dispatch({ type: 'userUpdate', user }));
     socket.on('friends', (f) => dispatch({ type: 'friends', ...f }));
+    socket.on('blocked', (list) => dispatch({ type: 'blocked', list }));
+    socket.on('privacy', (privacy) => dispatch({ type: 'privacy', privacy }));
     socket.on('friend:incoming', (info) => friendRef.current?.(info));
     socket.on('history', (history) => dispatch({ type: 'history', history }));
     socket.on('room:new', (room) => dispatch({ type: 'roomNew', room }));
@@ -424,6 +440,9 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
     friendDecline: (id) => ask('friend:decline', { id }),
     friendCancel: (id) => ask('friend:cancel', { id }),
     friendRemove: (id) => ask('friend:remove', { id }),
+    blockUser: (id) => ask('user:block', { id }),
+    unblockUser: (id) => ask('user:unblock', { id }),
+    updatePrivacy: (patch) => ask('privacy:update', patch),
     markAllRead: () => dispatch({ type: 'markAllRead' }),
     createRoom,
   };

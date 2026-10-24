@@ -37,6 +37,7 @@ const SESSION_DAYS = 90; // a sign-in lasts this long without use...
 const RENEW_AFTER_MS = 86_400_000; // ...and each visit pushes the end date out again (at most once a day)
 const MAX_SESSIONS = 25; // per account; the least recently used sign-in is dropped past this
 const MAX_FRIENDS = 200;
+const MAX_BLOCKED = 200;
 const MAX_OUTGOING_REQUESTS = 50;
 const MAX_OWNED_ROOMS = 10;
 const MAX_PUBLIC_MEMBERS_LISTED = 200;
@@ -226,6 +227,23 @@ export function attachChat(httpServer) {
 
   const areFriends = (a, b) => !!users.get(a)?.friends.includes(b);
 
+  // ---- blocking & privacy ----
+  // A block works in both directions for delivery: neither person can message, call a friend request
+  // or be added as a friend by the other. Only the blocker is told; the blocked person just sees
+  // the usual "you can only message friends" behaviour.
+  const hasBlocked = (a, b) => !!users.get(a)?.blocked?.includes(b);
+  const isBlocked = (a, b) => hasBlocked(a, b) || hasBlocked(b, a);
+  const privacyOf = (u) => ({
+    requests: u?.privacy?.requests === 'nobody' ? 'nobody' : 'everyone',
+    showOnline: u?.privacy?.showOnline !== false,
+  });
+  const blockState = (id) =>
+    (users.get(id)?.blocked || [])
+      .map((x) => users.get(x))
+      .filter(Boolean)
+      .map((u) => ({ id: u.id, name: u.name, color: u.color }));
+  const pushBlocked = (id) => io.to(`user:${id}`).emit('blocked', blockState(id));
+
   // Live actions (send, react, type...) need access; DMs also need the two people to still be friends.
   const canAccess = (user, roomId) => {
     if (typeof roomId !== 'string') return false;
@@ -236,7 +254,8 @@ export function attachChat(httpServer) {
         m[0] !== m[1] &&
         m.includes(user.id) &&
         m.every((id) => users.has(id)) &&
-        areFriends(m[0], m[1])
+        areFriends(m[0], m[1]) &&
+        !isBlocked(m[0], m[1])
       );
     }
     const room = rooms.find((r) => r.id === roomId);
@@ -317,8 +336,8 @@ export function attachChat(httpServer) {
     pronouns: u.pronouns || '',
     tz: u.tz || '',
     joinedAt: u.joinedAt,
-    lastSeen: u.lastSeen || null,
-    online: (connections.get(u.id) || 0) > 0,
+    lastSeen: privacyOf(u).showOnline ? u.lastSeen || null : null,
+    online: privacyOf(u).showOnline && (connections.get(u.id) || 0) > 0,
   });
   const usersFor = (id) => relatedIds(id).map((x) => publicUser(users.get(x)));
   const sendUsers = (id) => io.to(`user:${id}`).emit('users', usersFor(id));
@@ -406,6 +425,8 @@ export function attachChat(httpServer) {
         users: usersFor(user.id),
         history: historyFor(user.id),
         friends: friendState(user.id),
+        blocked: blockState(user.id),
+        privacy: privacyOf(user),
       };
     };
 
@@ -480,6 +501,8 @@ export function attachChat(httpServer) {
         joinedAt: Date.now(),
         lastSeen: null,
         friends: [],
+        blocked: [],
+        privacy: { requests: 'everyone', showOnline: true },
       };
       users.set(id, user);
       byName.set(user.key, id);
@@ -772,6 +795,8 @@ export function attachChat(httpServer) {
       if (!other) return ack?.({ error: 'Nobody has that username.' });
       if (other.id === user.id) return ack?.({ error: 'That is you.' });
       if (areFriends(user.id, other.id)) return ack?.({ error: `You and ${other.name} are already friends.` });
+      if (hasBlocked(user.id, other.id)) return ack?.({ error: `You blocked ${other.name}. Unblock them first.` });
+      if (hasBlocked(other.id, user.id)) return ack?.({ error: 'That request could not be sent.' });
       if (requests.some((r) => r.from === user.id && r.to === other.id)) {
         return ack?.({ error: `You already asked ${other.name}.` });
       }
@@ -785,6 +810,7 @@ export function attachChat(httpServer) {
         pushFriends(user.id, other.id);
         return ack?.({ ok: true, accepted: true, name: other.name });
       }
+      if (privacyOf(other).requests === 'nobody') return ack?.({ error: `${other.name} is not accepting friend requests.` });
       if (user.friends.length >= MAX_FRIENDS) return ack?.({ error: 'Your friends list is full.' });
       if (requests.filter((r) => r.from === user.id).length >= MAX_OUTGOING_REQUESTS) {
         return ack?.({ error: 'You have too many pending requests. Cancel some first.' });
@@ -803,6 +829,7 @@ export function attachChat(httpServer) {
       if (!other) return;
       const at = requests.findIndex((r) => r.from === other.id && r.to === user.id);
       if (at < 0) return ack?.({ error: 'That request is no longer there.' });
+      if (isBlocked(user.id, other.id)) return ack?.({ error: 'That request is no longer there.' });
       if (user.friends.length >= MAX_FRIENDS) return ack?.({ error: 'Your friends list is full.' });
       requests.splice(at, 1);
       if (!user.friends.includes(other.id)) user.friends.push(other.id);
@@ -837,6 +864,53 @@ export function attachChat(httpServer) {
       save();
       pushFriends(user.id, other.id);
       ack?.({ ok: true });
+    });
+
+    socket.on('user:block', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const other = friendTarget(ack, p?.id);
+      if (!other) return;
+      if (other.id === user.id) return ack?.({ error: 'You cannot block yourself.' });
+      user.blocked ||= [];
+      if (!user.blocked.includes(other.id)) {
+        if (user.blocked.length >= MAX_BLOCKED) return ack?.({ error: 'Your block list is full.' });
+        user.blocked.push(other.id);
+      }
+      // blocking ends any friendship and clears pending requests in both directions
+      user.friends = user.friends.filter((id) => id !== other.id);
+      other.friends = other.friends.filter((id) => id !== user.id);
+      for (let i = requests.length - 1; i >= 0; i--) {
+        const r = requests[i];
+        if ((r.from === user.id && r.to === other.id) || (r.from === other.id && r.to === user.id)) requests.splice(i, 1);
+      }
+      save();
+      pushFriends(user.id, other.id);
+      pushBlocked(user.id);
+      ack?.({ ok: true, name: other.name });
+    });
+
+    socket.on('user:unblock', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const id = typeof p?.id === 'string' ? p.id : '';
+      user.blocked = (user.blocked || []).filter((x) => x !== id);
+      save();
+      pushBlocked(user.id);
+      ack?.({ ok: true });
+    });
+
+    socket.on('privacy:update', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const next = privacyOf(user);
+      if (p?.requests === 'everyone' || p?.requests === 'nobody') next.requests = p.requests;
+      if (typeof p?.showOnline === 'boolean') next.showOnline = p.showOnline;
+      user.privacy = next;
+      save();
+      broadcastUser(user);
+      io.to(`user:${user.id}`).emit('privacy', next);
+      ack?.({ ok: true, privacy: next });
     });
 
     // ---- rooms ----

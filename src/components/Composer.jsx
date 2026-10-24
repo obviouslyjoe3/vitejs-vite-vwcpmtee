@@ -106,6 +106,9 @@ export default function Composer({
       return onOpenPoll?.();
     }
     if (/^\/shrug(\s|$)/i.test(out)) out = (out.slice(6).trim() + ' ¯\\_(ツ)_/¯').trim();
+    else if (/^\/tableflip(\s|$)/i.test(out)) out = (out.slice(10).trim() + ' (╯°□°)╯︵ ┻━┻').trim();
+    else if (/^\/unflip(\s|$)/i.test(out)) out = (out.slice(7).trim() + ' ┬─┬ ノ( ゜-゜ノ)').trim();
+    else if (/^\/lenny(\s|$)/i.test(out)) out = (out.slice(6).trim() + ' ( ͡° ͜ʖ ͡°)').trim();
     onSend({ text: shortcodes ? replaceShortcodes(out) : out, image });
     update('');
     setImage(null);
@@ -366,6 +369,9 @@ export default function Composer({
           <button className="tool" onClick={() => wrap('`')} disabled={disabled} aria-label="Code" title="Code">
             <Icon name="code" size={16} />
           </button>
+          {text.length > 1500 && (
+            <span className={text.length >= 2000 ? 'char-count over' : 'char-count'} aria-live="polite">{text.length}/2000</span>
+          )}
           <span className="bar-hint">
             {sendKey === 'mod'
               ? 'Ctrl/Cmd+Enter to send · Enter for a new line · ↑ edits your last message'

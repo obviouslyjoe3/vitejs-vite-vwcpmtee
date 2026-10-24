@@ -10,6 +10,9 @@ import ProfileCard from './components/ProfileCard.jsx';
 import Friends from './components/Friends.jsx';
 import Discover from './components/Discover.jsx';
 import Logo from './components/Logo.jsx';
+import Toaster from './components/Toaster.jsx';
+import Confetti from './components/Confetti.jsx';
+import { toast, confetti } from './toast.js';
 import {
   loadAppearance, saveAppearance, applyAppearance, defaultAppearance, clearDrafts,
   loadConvPrefs, saveConvPrefs, loadDrafts, saveDraft, loadSaved, saveSaved,
@@ -28,6 +31,7 @@ const ago = (ts) => {
 export default function App() {
   const [view, setView] = useState('list'); // mobile only: 'list' | 'thread'
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState('profile');
   const [appearance, setAppearance] = useState(loadAppearance);
   const [prefs, setPrefs] = useState(loadPrefs);
   const [panel, setPanel] = useState(null); // null | 'info' | 'pins' | 'search'
@@ -49,6 +53,7 @@ export default function App() {
     const isDm = msg.room.startsWith('dm:');
     const mentioned =
       !!msg.text && msg.text.toLowerCase().includes('@' + me.name.toLowerCase());
+    if (live.current.blockedIds?.includes(msg.user.id)) return; // blocked people never alert you
     if (live.current.muted?.includes(msg.room) && !mentioned) return; // muted: only @mentions get through
     if (pf.scope === 'mentions' && !mentioned) return;
     if (pf.scope !== 'all' && !isDm && !mentioned) return; // default: rooms stay quiet unless you are mentioned
@@ -67,13 +72,28 @@ export default function App() {
 
   const onFriendRequest = useCallback((from) => {
     const { prefs: pf } = live.current;
+    toast(`${from.name} sent you a friend request`);
     if (alertsSilenced(pf)) return;
     if (pf.sound) beep(pf.volume);
     if (pf.desktop && document.hidden) showDesktop(from.name, 'Sent you a friend request');
   }, []);
 
   const p = useParley({ onIncoming, onFriendRequest });
-  live.current = { me: p.me, active: p.active, prefs, muted: convPrefs.muted };
+  const blockedIds = useMemo(() => p.blocked.map((b) => b.id), [p.blocked]);
+  live.current = { ...live.current, me: p.me, active: p.active, prefs, muted: convPrefs.muted, blockedIds };
+
+  // Room messages from people you blocked are hidden everywhere (DMs with them stay readable)
+  const shownMessages = useMemo(() => {
+    if (!blockedIds.length) return p.messages;
+    const out = {};
+    for (const [id, list] of Object.entries(p.messages)) {
+      out[id] = id.startsWith('dm:') ? list : list.filter((m) => !blockedIds.includes(m.user?.id));
+    }
+    return out;
+  }, [p.messages, blockedIds]);
+  const hiddenCount = blockedIds.length && p.active && !p.active.startsWith('dm:')
+    ? (p.messages[p.active] || []).length - (shownMessages[p.active] || []).length
+    : 0;
 
   // appearance: theme, accent, message style, text size
   useEffect(() => {
@@ -92,6 +112,7 @@ export default function App() {
 
   const toggleSaved = (msg) => {
     if (!meId) return;
+    toast(saved.some((x) => x.id === msg.id) ? 'Removed from saved' : 'Saved for later', 'success');
     setSaved((cur) => {
       const next = cur.some((x) => x.id === msg.id)
         ? cur.filter((x) => x.id !== msg.id)
@@ -139,6 +160,29 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Alt+Up / Alt+Down switch conversation; Esc closes an open side panel
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && panel && !settingsOpen && !quickOpen && !profileUser && !friendsTab && !discoverOpen) {
+        setPanel(null);
+        return;
+      }
+      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      const ids = live.current.order || [];
+      if (!ids.length) return;
+      e.preventDefault();
+      const at = ids.indexOf(live.current.active);
+      const next = ids[(at + (e.key === 'ArrowDown' ? 1 : -1) + ids.length) % ids.length];
+      if (next) {
+        p.setActive(next);
+        setView('thread');
+        setJump(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const changePrefs = async (next) => {
     let value = next;
     if (next.desktop && !prefs.desktop) {
@@ -173,8 +217,43 @@ export default function App() {
       if (!key.startsWith('dm:')) continue;
       for (const id of key.slice(3).split('|')) if (id !== p.me.id) ids.add(id);
     }
-    return p.users.filter((u) => ids.has(u.id));
-  }, [p.me, p.friends, p.messages, p.users]);
+    return p.users.filter((u) => ids.has(u.id) && !blockedIds.includes(u.id));
+  }, [p.me, p.friends, p.messages, p.users, blockedIds]);
+
+  live.current.order = p.me
+    ? [...p.rooms.map((r) => r.id), ...people.filter((u) => u.id !== p.me.id).map((u) => dmId(p.me.id, u.id))]
+    : [];
+
+  // toasts for connection changes, blocking, and 🎉 moments
+  const prevStatus = useRef(null);
+  useEffect(() => {
+    const was = prevStatus.current;
+    prevStatus.current = p.status;
+    if (!p.me || was === null) return;
+    if (p.status === 'offline' && was !== 'offline') toast('You’re offline. Reconnecting…', 'error');
+    if (p.status === 'connected' && was === 'offline') toast('Back online', 'success');
+  }, [p.status, p.me]);
+
+  const doBlock = async (u) => {
+    const res = await p.blockUser(u.id);
+    toast(res?.error || `Blocked ${u.name}`, res?.error ? 'error' : 'success');
+    return res;
+  };
+  const doUnblock = async (idOrUser) => {
+    const id = typeof idOrUser === 'string' ? idOrUser : idOrUser.id;
+    const res = await p.unblockUser(id);
+    toast(res?.error || 'Unblocked', res?.error ? 'error' : 'success');
+    return res;
+  };
+  const doSend = (payload) => {
+    if (/🎉|:tada:|\bcongrat/i.test(payload.text || '')) confetti();
+    p.send(p.active, payload);
+  };
+  const doReact = (id, emoji) => {
+    const msg = (p.messages[p.active] || []).find((m) => m.id === id);
+    if (emoji === '🎉' && !(msg?.reactions?.[emoji] || []).includes(p.me.id)) confetti();
+    p.react(p.active, id, emoji);
+  };
 
   const relationOf = (id) =>
     friendSet.has(id) ? 'friends' : p.incoming.includes(id) ? 'incoming' : p.outgoing.includes(id) ? 'outgoing' : 'none';
@@ -197,6 +276,7 @@ export default function App() {
           : 'Offline',
         user,
         closed: !friendSet.has(user.id),
+        blocked: blockedIds.includes(user.id),
       };
     }
     const room = p.rooms.find((r) => r.id === p.active);
@@ -206,7 +286,7 @@ export default function App() {
       ? `Private group · ${n} ${n === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`
       : `${n} ${n === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`;
     return { id: room.id, kind: 'room', title: room.name, subtitle, topic: room.topic, room };
-  }, [p.me, p.active, p.users, p.rooms, friendSet]);
+  }, [p.me, p.active, p.users, p.rooms, friendSet, blockedIds]);
 
   if (p.restoring) {
     return (
@@ -220,7 +300,7 @@ export default function App() {
   if (!p.me) return <Auth status={p.status} error={p.error} onLogin={p.login} onRegister={p.register} />;
 
   const typers = Object.keys(p.typing[p.active] || {})
-    .filter((id) => id !== p.me.id)
+    .filter((id) => id !== p.me.id && !blockedIds.includes(id))
     .map((id) => p.users.find((u) => u.id === id)?.name)
     .filter(Boolean);
 
@@ -253,7 +333,7 @@ export default function App() {
         people={people}
         friendIds={p.friends}
         requestCount={p.incoming.length}
-        messages={p.messages}
+        messages={shownMessages}
         unread={p.unread}
         active={p.active}
         status={p.status}
@@ -265,7 +345,7 @@ export default function App() {
         onLogout={logout}
         onOpenFriends={(tab) => setFriendsTab(tab)}
         onOpenDiscover={() => setDiscoverOpen(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => { setSettingsSection('profile'); setSettingsOpen(true); }}
         onQuick={() => setQuickOpen(true)}
         onMarkAllRead={p.markAllRead}
       />
@@ -275,7 +355,10 @@ export default function App() {
         me={p.me}
         users={p.users}
         friendUsers={friendUsers}
-        messages={p.messages[p.active] || []}
+        messages={shownMessages[p.active] || []}
+        hiddenCount={hiddenCount}
+        onManageBlocked={() => { setSettingsSection('privacy'); setSettingsOpen(true); }}
+        onUnblock={doUnblock}
         typers={typers}
         offline={p.status !== 'connected'}
         dividerTs={p.dividers[p.active] || null}
@@ -306,12 +389,12 @@ export default function App() {
         onMute={() => togglePref('muted', p.active)}
         onSetTopic={p.setTopic}
         onBack={() => setView('list')}
-        onSend={(payload) => p.send(p.active, payload)}
+        onSend={doSend}
         onTyping={() => prefs.typing && p.sendTyping(p.active)}
         sendKey={prefs.sendKey}
         shortcodes={prefs.shortcodes}
         spellcheck={prefs.spellcheck}
-        onReact={(id, emoji) => p.react(p.active, id, emoji)}
+        onReact={doReact}
         onEdit={(id, text) => p.edit(p.active, id, text)}
         onDelete={(id) => p.remove(p.active, id)}
         onPin={(id) => p.pin(p.active, id)}
@@ -320,6 +403,11 @@ export default function App() {
       {settingsOpen && (
         <Settings
           me={p.me}
+          blocked={p.blocked}
+          privacy={p.privacy}
+          initialSection={settingsSection}
+          onPrivacy={p.updatePrivacy}
+          onUnblock={doUnblock}
           appearance={appearance}
           prefs={prefs}
           onAppearance={setAppearance}
@@ -376,7 +464,10 @@ export default function App() {
             user={person}
             me={p.me}
             relation={relation}
-            canMessage={relation === 'friends' || hasDm}
+            canMessage={(relation === 'friends' || hasDm) && !blockedIds.includes(person.id)}
+            isBlocked={blockedIds.includes(person.id)}
+            onBlock={doBlock}
+            onUnblock={doUnblock}
             onClose={() => setProfileUser(null)}
             onMessage={(u) => {
               setProfileUser(null);
@@ -384,6 +475,7 @@ export default function App() {
             }}
             onEdit={() => {
               setProfileUser(null);
+              setSettingsSection('profile');
               setSettingsOpen(true);
             }}
             onAddFriend={(u) => p.friendRequest(u.name)}
@@ -394,12 +486,14 @@ export default function App() {
           />
         );
       })()}
+      <Toaster />
+      <Confetti />
       {quickOpen && (
         <QuickSwitcher
           me={p.me}
           rooms={p.rooms}
           users={people}
-          messages={p.messages}
+          messages={shownMessages}
           onPick={select}
           onClose={() => setQuickOpen(false)}
         />

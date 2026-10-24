@@ -10,12 +10,15 @@ import Emoji from '../Emoji.jsx';
 const SECTIONS = [
   ['profile', 'Profile', 'user'],
   ['account', 'Account', 'lock'],
+  ['privacy', 'Privacy & blocking', 'ban'],
   ['appearance', 'Appearance', 'palette'],
   ['notifications', 'Notifications', 'bell'],
   ['messaging', 'Messaging', 'send'],
   ['shortcuts', 'Shortcuts', 'command'],
   ['data', 'Data & reset', 'trash'],
 ];
+
+const WALLS = [['dots', 'Dots'], ['plain', 'Plain'], ['grid', 'Grid'], ['aurora', 'Aurora'], ['dusk', 'Dusk']];
 
 function Segmented({ label, value, options, onChange }) {
   return (
@@ -328,6 +331,16 @@ function AppearanceSection({ appearance, onAppearance }) {
           <Segmented label="Spacing" value={appearance.density} options={DENSITY} onChange={(density) => set({ density })} />
         </Row>
         <Toggle title="Show avatars" desc="The round picture beside each message." checked={appearance.avatars} onChange={(avatars) => set({ avatars })} />
+        <Row title="Chat background" desc="The backdrop behind your messages." stack>
+          <div className="wall-picker" role="radiogroup" aria-label="Chat background">
+            {WALLS.map(([id, name]) => (
+              <button key={id} type="button" role="radio" aria-checked={(appearance.wall || 'dots') === id} className={`wall-card ${(appearance.wall || 'dots') === id ? 'on' : ''}`} onClick={() => set({ wall: id })}>
+                <span className={`wall-thumb w-${id}`} />
+                {name}
+              </button>
+            ))}
+          </div>
+        </Row>
         <Row title="Time format" desc="Applies to message times and people’s local time.">
           <Segmented label="Time format" value={appearance.clock} options={CLOCKS} onChange={(clock) => set({ clock })} />
         </Row>
@@ -442,7 +455,8 @@ const SHORTCUTS = [
   [['↑'], 'Edit your last message (message box empty)'],
   [[MOD, 'B'], 'Bold the selection'],
   [[MOD, 'I'], 'Italic the selection'],
-  [['Esc'], 'Close dialogs and menus'],
+  [['Alt', '↑ / ↓'], 'Previous / next conversation'],
+  [['Esc'], 'Close dialogs, menus and side panels'],
   [['@'], 'Mention someone'],
   [[':'], 'Emoji shortcodes, like :fire:'],
 ];
@@ -464,13 +478,60 @@ function ShortcutsSection() {
       </Card>
       <Card title="Slash commands">
         <ul className="shortcuts">
-          {[['/me', 'Describe an action'], ['/shrug', 'Add ¯\\_(ツ)_/¯'], ['/poll', 'Start a poll'], ['/roll 2d6', 'Roll dice (rolled on the server)'], ['/flip', 'Flip a coin']].map(([cmd, what]) => (
+          {[['/me', 'Describe an action'], ['/shrug', 'Add ¯\\_(ツ)_/¯'], ['/poll', 'Start a poll'], ['/roll 2d6', 'Roll dice (rolled on the server)'], ['/flip', 'Flip a coin'], ['/tableflip', 'Add (╯°□°)╯︵ ┻━┻'], ['/unflip', 'Put the table back'], ['/lenny', 'Add ( ͡° ͜ʖ ͡°)']].map(([cmd, what]) => (
             <li key={cmd}>
               <span>{what}</span>
               <code>{cmd}</code>
             </li>
           ))}
         </ul>
+      </Card>
+    </>
+  );
+}
+
+function PrivacySection({ privacy, onPrivacy, blocked, onUnblock }) {
+  const [busy, setBusy] = useState('');
+  const unblock = async (b) => {
+    setBusy(b.id);
+    await onUnblock(b.id);
+    setBusy('');
+  };
+  return (
+    <>
+      <Card title="Visibility">
+        <Row title="Appear offline" desc="Hide your online status and last-seen time from everyone. You still get messages as usual.">
+          <Switch label="Appear offline" checked={!privacy.showOnline} onChange={(v) => onPrivacy({ showOnline: !v })} />
+        </Row>
+        <Row title="Friend requests" desc="Who can send you new friend requests. Anyone who already asked you can still be accepted." stack>
+          <Segmented
+            label="Who can send friend requests"
+            value={privacy.requests}
+            options={[['everyone', 'Everyone'], ['nobody', 'Nobody']]}
+            onChange={(v) => onPrivacy({ requests: v })}
+          />
+        </Row>
+      </Card>
+      <Card title={`Blocked people${blocked.length ? ` (${blocked.length})` : ''}`}>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Blocked people can’t message you or send friend requests, and their messages in rooms are hidden from you.
+          They aren’t told you blocked them. Blocking also removes them from your friends.
+        </p>
+        {blocked.length === 0 ? (
+          <p className="panel-empty tight">You haven’t blocked anyone.</p>
+        ) : (
+          <ul className="people rows blocked-list">
+            {blocked.map((b) => (
+              <li key={b.id} className="person-row">
+                <span className="person-btn static">
+                  <Avatar user={b} size={34} />
+                  <span className="people-name"><strong>{b.name}</strong></span>
+                </span>
+                <button className="chip" disabled={busy === b.id} onClick={() => unblock(b)}>Unblock</button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </>
   );
@@ -506,11 +567,11 @@ function DataSection({ savedCount, onClearDrafts, onClearSaved, onReset }) {
 /* ---------- dialog ---------- */
 
 export default function Settings({
-  me, appearance, prefs, savedCount = 0,
+  me, appearance, prefs, savedCount = 0, blocked = [], privacy = { requests: 'everyone', showOnline: true }, initialSection = 'profile', onPrivacy, onUnblock,
   onAppearance, onColor, onStatus, onProfile, onPrefs, onChangePassword, onLogout,
   onClearDrafts, onClearSaved, onReset, onClose,
 }) {
-  const [section, setSection] = useState('profile');
+  const [section, setSection] = useState(initialSection);
   const body = useRef(null);
 
   useEffect(() => {
@@ -544,6 +605,7 @@ export default function Settings({
             <h3 className="settings-heading">{current[1]}</h3>
             {section === 'profile' && <ProfileSection me={me} onColor={onColor} onStatus={onStatus} onProfile={onProfile} />}
             {section === 'account' && <AccountSection me={me} onChangePassword={onChangePassword} onLogout={onLogout} />}
+            {section === 'privacy' && <PrivacySection privacy={privacy} onPrivacy={onPrivacy} blocked={blocked} onUnblock={onUnblock} />}
             {section === 'appearance' && <AppearanceSection appearance={appearance} onAppearance={onAppearance} />}
             {section === 'notifications' && <NotificationsSection prefs={prefs} onPrefs={onPrefs} />}
             {section === 'messaging' && <MessagingSection prefs={prefs} onPrefs={onPrefs} />}

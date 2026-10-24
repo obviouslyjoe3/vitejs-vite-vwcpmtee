@@ -27,6 +27,7 @@ export default function Thread({
   onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers,
   onDraft, onPanel, onStar, onMute, onSetTopic, onJumped,
   onBack, onSend, onTyping, onReact, onEdit, onDelete, onPin, onVote,
+  hiddenCount = 0, onManageBlocked, onUnblock,
   sendKey = 'enter', shortcodes = true, spellcheck = true,
 }) {
   const scroller = useRef(null);
@@ -255,9 +256,20 @@ export default function Thread({
           )}
         </div>
 
+        {hiddenCount > 0 && (
+          <p className="hidden-note" role="status">
+            <Icon name="ban" size={13} /> {hiddenCount} {hiddenCount === 1 ? 'message' : 'messages'} from people you blocked {hiddenCount === 1 ? 'is' : 'are'} hidden.
+            <button className="link-btn" onClick={onManageBlocked}>Manage</button>
+          </p>
+        )}
         <div className="typing" aria-live="polite">{typingText}</div>
 
-        {conv.closed ? (
+        {conv.blocked ? (
+          <div className="closed-note blocked" role="status">
+            <p><Icon name="ban" size={15} /> You blocked {conv.title}. They can’t message you, and you can’t message them. Old messages stay readable.</p>
+            <button className="secondary" onClick={() => onUnblock(conv.user)}>Unblock</button>
+          </div>
+        ) : conv.closed ? (
           <div className="closed-note" role="status">
             <p>
               You and {conv.title} aren’t friends, so you can’t send new messages here. Your old messages are still

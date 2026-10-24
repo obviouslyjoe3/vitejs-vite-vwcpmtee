@@ -21,6 +21,7 @@ export const defaultAppearance = {
   density: 'comfortable', // 'comfortable' | 'compact'
   clock: 'system', // 'system' | '12' | '24'
   motion: 'system', // 'system' | 'full' | 'reduced'
+  wall: 'dots', // chat background: 'dots' | 'plain' | 'grid' | 'aurora' | 'dusk'
   avatars: true, // show avatars beside messages
   emoji: 'parley', // 'parley' (drawn emoji) | 'system'
 };
@@ -47,6 +48,7 @@ export const applyAppearance = (a) => {
   root.dataset.motion = a.motion || 'system';
   root.dataset.avatars = a.avatars === false ? 'off' : 'on';
   root.dataset.emoji = a.emoji || 'parley';
+  root.dataset.wall = a.wall || 'dots';
 };
 
 // Starred and muted conversations are remembered per person on this browser.

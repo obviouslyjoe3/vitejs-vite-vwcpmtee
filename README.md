@@ -13,6 +13,11 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - Rooms (create your own, edit the topic) and private direct messages, online or offline
 - **Private groups**: invite-only rooms with an owner. Members can add people; the owner can rename, change the icon, remove members or delete the group. Non-members never receive the group or its messages. Groups get an emoji icon (or #), and small notices show who created, added, removed or renamed
 - **Profiles**: pronouns, a short bio and a time zone (Settings > Profile). Click any avatar or name, or anyone in a member list, to open their profile card with local time, status, last seen, member-since and a Message button
+- **Blocking**: block anyone from their profile card. Blocking removes the friendship, cancels pending requests, closes the DM and stops them from messaging you or sending requests (enforced on the server). Their messages in rooms are hidden from you and never alert you, and they are not told. Manage the list in Settings > Privacy & blocking
+- **Privacy**: appear offline (hides online status and last seen) and choose whether anyone can send you friend requests
+- **Getting-started card** for new accounts (profile, first friend, first message) with a progress bar and a little celebration when finished
+- **Toasts** for saves, blocks, connection drops and incoming friend requests, and **confetti** when you send or react with 🎉
+- **Chat backgrounds**: dots, plain, grid, aurora or dusk (Settings > Appearance)
 - Replies, edit and delete your own messages, 20 emoji reactions
 - **Polls** (single or multiple choice, live votes) and **pinned messages** per conversation
 - **Search** inside a conversation, plus a **quick switcher** (Ctrl/Cmd+K) that jumps to rooms, people or any message
@@ -27,7 +32,7 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - Unread counts that survive reloads, a "New" divider, jump-to-latest, mark all read
 - Star and mute conversations; unsent drafts are kept per conversation
 - Custom status (emoji and text); pick your avatar color
-- **Settings** (two-pane dialog: Profile, Account, Appearance, Notifications, Messaging, Shortcuts, Data & reset)
+- **Settings** (two-pane dialog: Profile, Account, Privacy & blocking, Appearance, Notifications, Messaging, Shortcuts, Data & reset)
   - Appearance: theme cards (system/light/dark), five accents, bubble or flat style, text size, comfortable or compact spacing, avatars on/off, 12/24-hour clock, Parley or system emoji, animations auto/full/reduced, with a live preview
   - Notifications: pause all, quiet hours (can span midnight), choose what alerts you (DMs + @mentions, everything, or @mentions only), sound with volume and a test button, desktop notifications with optional message text, tab-title unread count
   - Messaging: send with Enter or Ctrl/Cmd+Enter, shortcode conversion, spell check, share typing status on/off

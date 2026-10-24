@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { toast, confetti } from '../toast.js';
 import Avatar from './Avatar.jsx';
 import Logo from './Logo.jsx';
 import Icon from './Icon.jsx';
@@ -19,6 +20,57 @@ const previewOf = (list, meId) => {
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
 
+function Welcome({ me, friendCount, hasSent, onProfile, onFriend, onSay }) {
+  const key = `parley:welcome:${me.id}`;
+  const [gone, setGone] = useState(() => {
+    try { return !!localStorage.getItem(key); } catch { return false; }
+  });
+  const steps = [
+    { label: 'Make it yours', hint: 'Add a bio, pronouns or a status', done: !!(me.bio || me.status || me.pronouns), go: onProfile },
+    { label: 'Add a friend', hint: 'Find someone by username', done: friendCount > 0, go: onFriend },
+    { label: 'Say hello', hint: 'Send your first message', done: hasSent, go: onSay },
+  ];
+  const done = steps.filter((x) => x.done).length;
+  const all = done === steps.length;
+  const first = useRef(all); // already finished before this session: stay quiet
+  const dismiss = (celebrate) => {
+    try { localStorage.setItem(key, '1'); } catch {}
+    setGone(true);
+    if (celebrate) {
+      confetti();
+      toast('You’re all set. Enjoy Parley!', 'success');
+    }
+  };
+  useEffect(() => {
+    if (gone || !all) return;
+    if (first.current) dismiss(false);
+    else dismiss(true);
+  }, [all, gone]);
+  if (gone) return null;
+  return (
+    <section className="welcome" aria-label="Getting started">
+      <div className="welcome-top">
+        <strong>Getting started</strong>
+        <span>{done}/{steps.length}</span>
+        <button className="side-icon welcome-x" onClick={() => dismiss(false)} aria-label="Hide getting started" title="Hide">
+          <Icon name="close" size={14} />
+        </button>
+      </div>
+      <div className="welcome-bar"><i style={{ width: `${(done / steps.length) * 100}%` }} /></div>
+      <ul>
+        {steps.map((x) => (
+          <li key={x.label}>
+            <button type="button" className={x.done ? 'done' : ''} onClick={x.go} disabled={x.done}>
+              <span className="welcome-dot">{x.done && <Icon name="check" size={12} />}</span>
+              <span><b>{x.label}</b><small>{x.hint}</small></span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default function Sidebar({
   me, rooms, people, friendIds, requestCount, messages, unread, active, status, starred, muted, anyUnread,
   onSelect, onCreateRoom, onLogout, onOpenSettings, onQuick, onMarkAllRead, onOpenFriends, onOpenDiscover,
@@ -31,12 +83,14 @@ export default function Sidebar({
   const [roomPrivate, setRoomPrivate] = useState(false);
   const [roomMembers, setRoomMembers] = useState([]);
   const [shut, setShut] = useState({});
+  const [onlyUnread, setOnlyUnread] = useState(false);
   const flip = (k) => setShut((c) => ({ ...c, [k]: !c[k] }));
   const q = query.trim().toLowerCase();
 
   const roomRows = rooms
     .filter((r) => r.name.includes(q))
-    .map((r) => ({ kind: 'room', id: r.id, r, list: messages[r.id] }));
+    .map((r) => ({ kind: 'room', id: r.id, r, list: messages[r.id] }))
+    .filter((x) => !onlyUnread || unread[x.id] > 0);
 
   const friendUsers = people.filter((u) => friendIds.includes(u.id));
   const personRows = people
@@ -51,7 +105,8 @@ export default function Sidebar({
         (b.last?.ts || 0) - (a.last?.ts || 0) ||
         Number(b.u.online) - Number(a.u.online) ||
         a.u.name.localeCompare(b.u.name)
-    );
+    )
+    .filter((x) => !onlyUnread || unread[x.id] > 0);
 
   const starredRows = [...roomRows, ...personRows].filter((x) => starred.includes(x.id));
   const rest = (rows) => rows.filter((x) => !starred.includes(x.id));
@@ -138,7 +193,25 @@ export default function Sidebar({
           placeholder="Filter the list"
           aria-label="Filter rooms and people"
         />
+        <button
+          type="button"
+          className={onlyUnread ? 'unread-toggle on' : 'unread-toggle'}
+          aria-pressed={onlyUnread}
+          onClick={() => setOnlyUnread((v) => !v)}
+          title="Show only conversations with unread messages"
+        >
+          Unread
+        </button>
       </div>
+
+      <Welcome
+        me={me}
+        friendCount={friendIds.length}
+        hasSent={Object.values(messages).some((l) => l.some((m) => m.user.id === me.id && !m.pending))}
+        onProfile={onOpenSettings}
+        onFriend={() => onOpenFriends('add')}
+        onSay={onQuick}
+      />
 
       <div className="side-scroll">
         {starredRows.length > 0 && (

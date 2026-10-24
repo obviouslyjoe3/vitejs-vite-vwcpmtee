@@ -48,8 +48,8 @@ export function ProfileFacts({ user }) {
 
 // relation: 'friends' | 'incoming' (they asked you) | 'outgoing' (you asked them) | 'none'
 export default function ProfileCard({
-  user, me, relation, canMessage, onMessage, onEdit, onClose,
-  onAddFriend, onAccept, onDecline, onCancel, onRemove,
+  user, me, relation, canMessage, isBlocked, onMessage, onEdit, onClose,
+  onAddFriend, onAccept, onDecline, onCancel, onRemove, onBlock, onUnblock,
 }) {
   const [error, setError] = useState('');
   const act = async (fn) => {
@@ -108,6 +108,11 @@ export default function ProfileCard({
             <button className="primary" onClick={onEdit}>
               Edit profile
             </button>
+          ) : isBlocked ? (
+            <>
+              <span className="pill-note"><Icon name="ban" size={13} /> You blocked {user.name}</span>
+              <button className="secondary" onClick={() => act(onUnblock)}>Unblock</button>
+            </>
           ) : (
             <>
               {canMessage && (
@@ -142,6 +147,14 @@ export default function ProfileCard({
                   Remove friend
                 </button>
               )}
+              <button
+                className="text-btn danger-text"
+                onClick={() => {
+                  if (window.confirm(`Block ${user.name}? They won’t be able to message you or send friend requests, and you’ll stop seeing their messages in rooms.`)) act(onBlock);
+                }}
+              >
+                <Icon name="ban" size={14} /> Block
+              </button>
             </>
           )}
           {error && <p className="form-error" role="alert">{error}</p>}

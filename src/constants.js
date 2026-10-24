@@ -28,6 +28,8 @@ export const ACCENTS = [
   ['rose', 'Rose', '#C2347A'],
   ['amber', 'Amber', '#B8620F'],
   ['blue', 'Blue', '#2A6FBF'],
+  ['green', 'Green', '#3f7d20'],
+  ['graphite', 'Graphite', '#4b5563'],
 ];
 
 // :shortcode: -> emoji (typed with autocomplete, converted when you send)
