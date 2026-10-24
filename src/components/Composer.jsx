@@ -35,7 +35,7 @@ function fileToDataUrl(file) {
 export default function Composer({
   placeholder, disabled, users, me, replyTo, draft = '', onDraft,
   onCancelReply, onSend, onTyping, onOpenPoll, onEditLast,
-  sendKey = 'enter', shortcodes = true, spellcheck = true, textOnly = false, maxChars = 2000,
+  sendKey = 'enter', shortcodes = true, spellcheck = true, textOnly = false, maxChars = 2000, dropped = null,
 }) {
   const [text, setText] = useState(draft);
   const [image, setImage] = useState(null);
@@ -128,6 +128,17 @@ export default function Composer({
       setNote(err.message);
     }
   };
+
+  // a photo dragged onto the chat window
+  useEffect(() => {
+    if (!dropped || textOnly) return;
+    if (!dropped.file) {
+      setNote('Only images can be attached.');
+      return;
+    }
+    attach(dropped.file);
+    box.current?.focus();
+  }, [dropped]);
 
   const change = (e) => {
     const value = e.target.value;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import Logo from './Logo.jsx';
 import Icon from './Icon.jsx';
@@ -22,6 +22,7 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 export default function Sidebar({
   me, rooms, people, friendIds, favoriteIds = [], requestCount, messages, unread, active, status, starred, muted, anyUnread,
   msgRequestCount = 0, pendingOut = [], onOpenRequests,
+  drafts = {}, mentions = {}, dnd = { until: 0, paused: false }, onDnd,
   onSelect, onCreateRoom, onLogout, onOpenSettings, onQuick, onMarkAllRead, onOpenFriends, onOpenDiscover,
 }) {
   const [query, setQuery] = useState('');
@@ -34,6 +35,35 @@ export default function Sidebar({
   const [shut, setShut] = useState({});
   const [onlyUnread, setOnlyUnread] = useState(false);
   const flip = (k) => setShut((c) => ({ ...c, [k]: !c[k] }));
+  const [dndOpen, setDndOpen] = useState(false);
+  const [, bump] = useState(0);
+  const dndRef = useRef(null);
+  const dndOn = dnd.paused || dnd.until > Date.now();
+
+  // re-draw when a timed pause runs out, so the moon stops glowing
+  useEffect(() => {
+    if (!dnd.until || dnd.until <= Date.now()) return undefined;
+    const t = setTimeout(() => bump((n) => n + 1), Math.min(dnd.until - Date.now() + 250, 2147483000));
+    return () => clearTimeout(t);
+  }, [dnd.until]);
+
+  useEffect(() => {
+    if (!dndOpen) return undefined;
+    const close = (e) => {
+      if (e.type === 'keydown' ? e.key === 'Escape' : !dndRef.current?.contains(e.target)) setDndOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [dndOpen]);
+
+  const pauseFor = (label, until) => {
+    onDnd?.(until, label);
+    setDndOpen(false);
+  };
   const q = query.trim().toLowerCase();
 
   const roomRows = rooms
@@ -79,6 +109,8 @@ export default function Sidebar({
   const row = (x) => {
     const n = unread[x.id] || 0;
     const isMuted = muted.includes(x.id);
+    const at = mentions[x.id] || 0;
+    const hasDraft = !!drafts[x.id] && active !== x.id;
     return (
       <li key={x.id}>
         <button
@@ -96,6 +128,7 @@ export default function Sidebar({
               {x.kind === 'room' ? x.r.name : x.u.name}
               {x.kind === 'dm' && x.u.status?.emoji && <span className="conv-status"><Emoji char={x.u.status.emoji} /></span>}
               {x.pending && <span className="req-pill" title="Waiting for them to accept">Request</span>}
+              {hasDraft && <span className="draft-pill" title="You have an unsent message here">Draft</span>}
             </span>
             <span className="conv-preview">
               {x.closed && !x.list?.length
@@ -105,6 +138,9 @@ export default function Sidebar({
             </span>
           </span>
           {isMuted && <Icon name="bellOff" size={14} className="mute-mark" />}
+          {at > 0 && !isMuted && (
+            <span className="at-badge" title={at === 1 ? 'You were mentioned' : `You were mentioned ${at} times`} aria-label={`${at} ${at === 1 ? 'mention' : 'mentions'}`}>@</span>
+          )}
           {n > 0 && <span className={isMuted ? 'badge quiet' : 'badge'}>{n}</span>}
         </button>
       </li>
@@ -122,6 +158,54 @@ export default function Sidebar({
           role="status"
           aria-label={status === 'connected' ? 'Connected' : 'Reconnecting'}
         />
+        <div className="dnd-anchor" ref={dndRef}>
+          <button
+            className={dndOn ? 'side-icon dnd-on' : 'side-icon'}
+            onClick={() => setDndOpen((v) => !v)}
+            aria-expanded={dndOpen}
+            aria-label={dndOn ? 'Alerts are paused' : 'Pause alerts'}
+            title={dndOn ? 'Alerts are paused' : 'Pause alerts'}
+          >
+            <Icon name="moon" />
+          </button>
+          {dndOpen && (
+            <div className="dnd-menu" role="menu" aria-label="Pause alerts">
+              <p className="dnd-title">
+                {dnd.paused
+                  ? 'Paused in Settings'
+                  : dnd.until > Date.now()
+                  ? `Paused until ${new Date(dnd.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                  : 'Pause alerts'}
+              </p>
+              {[
+                ['30 minutes', 30],
+                ['1 hour', 60],
+                ['4 hours', 240],
+              ].map(([label, m]) => (
+                <button key={label} role="menuitem" onClick={() => pauseFor(label, Date.now() + m * 60000)}>
+                  For {label}
+                </button>
+              ))}
+              <button
+                role="menuitem"
+                onClick={() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + (d.getHours() >= 9 ? 1 : 0));
+                  d.setHours(9, 0, 0, 0);
+                  pauseFor('tomorrow morning', d.getTime());
+                }}
+              >
+                Until 9 am
+              </button>
+              {dnd.until > Date.now() && (
+                <button role="menuitem" className="resume" onClick={() => pauseFor('', 0)}>
+                  Resume alerts now
+                </button>
+              )}
+              <small>Unread counts still update. Only sounds and desktop alerts are silenced.</small>
+            </div>
+          )}
+        </div>
         <button
           className="side-icon"
           onClick={onMarkAllRead}

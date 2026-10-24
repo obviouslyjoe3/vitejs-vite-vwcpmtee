@@ -1524,3 +1524,119 @@ body, .sidebar, .thread, .thread-head, .bubble, .panel, .dialog, .msg-meta stron
   .friend-tools { flex-direction: column; }
   .friend-tools select.field { width: 100%; }
 }
+
+/* ============================================================
+   v18: a lighter touch on the look, plus styles for the new bits
+   ============================================================ */
+
+/* ---- softer, slightly more modern surfaces ---- */
+:root { --r-md: 14px; --r-lg: 20px; }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent; }
+
+.sidebar { background: linear-gradient(180deg, var(--side-bg) 0%, color-mix(in srgb, var(--side-bg) 90%, #000) 100%); }
+.side-head h2 { letter-spacing: -0.035em; }
+.quick { border-radius: 14px; background: color-mix(in srgb, var(--side-bg-2) 80%, transparent); transition: border-color 0.14s, color 0.14s, background 0.14s; }
+.quick:hover { background: var(--side-bg-2); }
+.search input { border-radius: 12px; }
+.side-title h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.8; }
+.conv { border-radius: 14px; }
+.conv.active { background: linear-gradient(90deg, color-mix(in srgb, var(--violet) 34%, transparent), rgba(255, 255, 255, 0.07)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+.avatar { border-radius: 38%; }
+
+.thread-title h1 { font-size: 20px; }
+.tool { border-radius: 11px; }
+.tool.lit { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 30%, transparent); }
+
+.day { align-items: center; gap: 14px; margin: 14px 0 6px; }
+.day::before, .day::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.day span { background: none; border: 0; box-shadow: none; padding: 0 2px; font-weight: 600; letter-spacing: 0.03em; font-size: 11.5px; text-transform: uppercase; }
+
+.composer { border-width: 1px; border-radius: 20px; box-shadow: 0 12px 30px -20px rgba(20, 12, 60, 0.5), var(--shadow-sm); transition: box-shadow 0.16s, border-color 0.16s; }
+.composer:focus-within { border-color: var(--violet); box-shadow: 0 0 0 4px color-mix(in srgb, var(--violet) 16%, transparent), 0 12px 30px -20px rgba(20, 12, 60, 0.5); }
+.composer .send { border-radius: 999px; padding: 8px 18px; }
+.composer-wrap { padding: 0 24px 16px; }
+
+.empty-card { border-radius: var(--r-lg); }
+.empty-icon { background: linear-gradient(135deg, var(--violet-wash), color-mix(in srgb, var(--violet) 22%, var(--white))); }
+
+/* ---- the thread can show a drop hint on top of itself ---- */
+.thread-main { position: relative; }
+.drop-hint {
+  position: absolute; inset: 8px; z-index: 15; display: grid; place-items: center; text-align: center; pointer-events: none;
+  border: 2px dashed var(--violet); border-radius: 22px;
+  background: color-mix(in srgb, var(--violet) 12%, color-mix(in srgb, var(--white) 70%, transparent));
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  animation: fade 0.12s ease;
+}
+.drop-hint > div { display: grid; gap: 6px; justify-items: center; color: var(--violet-deep); }
+.drop-hint strong { font-family: var(--display); font-size: 20px; letter-spacing: -0.02em; }
+.drop-hint span { font-size: 13.5px; color: var(--muted); }
+
+/* ---- recently used reactions ---- */
+.picker-recent { grid-column: 1 / -1; display: flex; align-items: center; gap: 2px; padding: 0 2px 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.picker-recent span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 6px 0 4px; }
+
+/* ---- sidebar: pause alerts, drafts and mentions ---- */
+.dnd-anchor { position: relative; }
+.side-icon.dnd-on { color: var(--amber); background: rgba(242, 177, 52, 0.15); }
+.side-icon.dnd-on:hover:not(:disabled) { color: var(--amber); }
+.dnd-menu { position: absolute; z-index: 14; top: calc(100% + 6px); right: -44px; width: 232px; padding: 6px; display: grid; background: var(--white); color: var(--ink); border-radius: 14px; box-shadow: 0 0 0 1px var(--line), var(--shadow); animation: rise 0.14s var(--ease); }
+.dnd-menu .dnd-title { margin: 0; padding: 6px 10px 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.dnd-menu button { width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 9px; background: none; font-size: 14px; color: var(--ink); }
+.dnd-menu button:hover { background: var(--violet-wash); }
+.dnd-menu button.resume { color: var(--violet-deep); font-weight: 600; }
+.dnd-menu small { padding: 6px 10px 4px; font-size: 12px; line-height: 1.35; color: var(--muted); }
+
+.draft-pill { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 6px; border-radius: 7px; color: var(--amber); background: rgba(242, 177, 52, 0.16); }
+.at-badge { min-width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; line-height: 1; color: #2b1d00; background: var(--amber); box-shadow: 0 0 0 2px var(--side-bg); flex-shrink: 0; }
+
+/* ---- photo viewer with next/previous ---- */
+.lightbox.gallery { display: block; padding: 0; background: rgba(8, 6, 20, 0.93); cursor: zoom-out; animation: fade 0.14s ease; }
+.lb-top { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 12px 16px; color: #fff; background: linear-gradient(rgba(0, 0, 0, 0.55), transparent); cursor: default; }
+.lb-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.lb-who strong { font-size: 15px; }
+.lb-who time { font-size: 12.5px; opacity: 0.75; }
+.lb-count { font-size: 13px; opacity: 0.8; margin-right: 6px; }
+.lb-btn, .lb-nav { border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.13); color: #fff; display: grid; place-items: center; text-decoration: none; cursor: pointer; transition: background 0.12s; }
+.lb-btn:hover, .lb-nav:hover { background: rgba(255, 255, 255, 0.26); }
+.lb-btn { width: 38px; height: 38px; }
+.lb-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; width: 46px; height: 46px; }
+.lb-nav.prev { left: 16px; }
+.lb-nav.next { right: 16px; }
+.lb-stage { position: absolute; inset: 64px 78px 24px; display: flex; overflow: auto; cursor: default; }
+.lb-stage img { margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; cursor: zoom-in; box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7); }
+.lightbox.zoomed .lb-stage img { max-width: none; max-height: none; object-fit: none; cursor: zoom-out; }
+@media (max-width: 700px) {
+  .lb-stage { inset: 60px 10px 16px; }
+  .lb-nav { width: 40px; height: 40px; background: rgba(0, 0, 0, 0.45); }
+  .lb-nav.prev { left: 8px; }
+  .lb-nav.next { right: 8px; }
+}
+
+/* ---- keyboard shortcut list ---- */
+.keys-dialog { max-width: 520px; }
+.keys-dialog h2 { display: flex; align-items: center; gap: 10px; }
+.keymap { margin: 0; display: grid; }
+.keymap > div { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 16px; padding: 8px 0; }
+.keymap > div + div { border-top: 1px solid var(--line); }
+.keymap dd { margin: 0; font-size: 14px; }
+.keymap dt { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.keymap dt i { font-style: normal; font-size: 11px; color: var(--muted); }
+.keymap kbd { opacity: 1; background: var(--white); border-color: var(--line); border-bottom-width: 2px; color: var(--ink); font-size: 12px; padding: 2px 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-hint, .dnd-menu, .lightbox.gallery { animation: none; }
+}
+
+/* ---- profile pictures ---- */
+.avatar.photo { display: block; object-fit: cover; background: var(--canvas-deep); user-select: none; }
+.photo-row { display: flex; align-items: center; gap: 16px; }
+.photo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+/* ---- @mentions: the text itself changes (no highlight box) ---- */
+.mention, .mention.me { background: none; padding: 0; border-radius: 0; font-family: var(--display); font-weight: 700; letter-spacing: -0.005em; color: var(--violet-deep); }
+.mention.me { color: var(--rose); }
+.msg.mine .bubble .mention, .msg.mine .bubble .mention.me { background: none; color: #fff; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; text-decoration-color: rgba(255, 255, 255, 0.6); }
+:root[data-style='flat'] .msg.mine .bubble .mention { background: none; color: var(--violet-deep); text-decoration: none; }
+:root[data-style='flat'] .msg.mine .bubble .mention.me { background: none; color: var(--rose); text-decoration: none; }
+/* a message that pings you keeps its amber outline, so it still stands out */

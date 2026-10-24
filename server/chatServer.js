@@ -70,6 +70,11 @@ const cleanStatus = (st) => {
 
 const cleanBio = (v) => String(v || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, 300);
 const cleanLocation = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+// Profile picture: a small JPEG sent as a data URL (the client crops and shrinks it). '' removes it.
+const cleanPhoto = (v) => {
+  const raw = typeof v === 'string' ? v : '';
+  return raw.length <= 70000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(raw) ? raw : '';
+};
 const cleanBanner = (v) => (BANNERS.includes(v) ? v : '');
 const cleanWebsite = (v) => {
   const raw = String(v || '').trim().slice(0, 120);
@@ -485,6 +490,7 @@ export function attachChat(httpServer) {
     pronouns: u.pronouns || '',
     tz: u.tz || '',
     banner: u.banner || '',
+    photo: u.photo || '',
     location: u.location || '',
     website: u.website || '',
     interests: u.interests || [],
@@ -1030,6 +1036,10 @@ export function attachChat(httpServer) {
       if (p?.pronouns !== undefined) patch.pronouns = cleanPronouns(p.pronouns);
       if (p?.tz !== undefined) patch.tz = cleanTz(p.tz);
       if (p?.banner !== undefined) patch.banner = cleanBanner(p.banner);
+      if (p?.photo !== undefined) {
+        patch.photo = cleanPhoto(p.photo);
+        if (p.photo && !patch.photo) return ack?.({ error: 'That picture could not be used. Try a smaller one.' });
+      }
       if (p?.location !== undefined) patch.location = cleanLocation(p.location);
       if (p?.website !== undefined) patch.website = cleanWebsite(p.website);
       if (p?.interests !== undefined) patch.interests = cleanInterests(p.interests);

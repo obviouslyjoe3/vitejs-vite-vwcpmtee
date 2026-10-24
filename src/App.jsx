@@ -11,6 +11,7 @@ import Friends from './components/Friends.jsx';
 import Discover from './components/Discover.jsx';
 import MessageRequests from './components/MessageRequests.jsx';
 import ForwardDialog from './components/ForwardDialog.jsx';
+import ShortcutsDialog from './components/ShortcutsDialog.jsx';
 import Logo from './components/Logo.jsx';
 import { QUIET_ROOMS, MAX_REQUEST_MSGS } from './constants.js';
 import Toaster from './components/Toaster.jsx';
@@ -46,6 +47,8 @@ export default function App() {
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
   const [forwardMsg, setForwardMsg] = useState(null);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const [draftIds, setDraftIds] = useState({}); // conversation id -> true while it holds an unsent draft
   const [access, setAccess] = useState({}); // other person's id -> how you may message them (from the server)
   const [jump, setJump] = useState(null); // { conv, id }
   const [convPrefs, setConvPrefs] = useState({ starred: [], muted: [] });
@@ -120,6 +123,24 @@ export default function App() {
     ? (p.messages[p.active] || []).length - (shownMessages[p.active] || []).length
     : 0;
 
+  // unread @mentions per conversation (the global room has no unread count, but a mention still shows)
+  const mentionCounts = useMemo(() => {
+    const out = {};
+    if (!p.me) return out;
+    const tag = '@' + p.me.name.toLowerCase();
+    for (const [id, list] of Object.entries(p.messages)) {
+      if (id === p.active) continue;
+      if (!(p.unread[id] > 0) && !QUIET_ROOMS.includes(id)) continue;
+      const since = p.lastRead[id] ?? 0;
+      let n = 0;
+      for (const m of list) {
+        if (m.ts > since && m.user.id !== p.me.id && !m.deleted && !m.system && !blockedIds.includes(m.user.id) && m.text && m.text.toLowerCase().includes(tag)) n += 1;
+      }
+      if (n) out[id] = n;
+    }
+    return out;
+  }, [p.messages, p.lastRead, p.unread, p.active, p.me, blockedIds]);
+
   // appearance: theme, accent, message style, text size
   useEffect(() => {
     applyAppearance(appearance);
@@ -132,6 +153,7 @@ export default function App() {
     if (!meId) return;
     setConvPrefs(loadConvPrefs(meId));
     drafts.current = loadDrafts(meId);
+    setDraftIds(Object.fromEntries(Object.entries(drafts.current).filter(([, v]) => v).map(([k]) => [k, true])));
     setSaved(loadSaved(meId));
     setReminders(loadReminders(meId));
   }, [meId]);
@@ -223,10 +245,23 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // ? opens the shortcut list (unless you are typing somewhere)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      setKeysOpen((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Alt+Up / Alt+Down switch conversation; Esc closes an open side panel
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape' && panel && !settingsOpen && !quickOpen && !profileUser && !friendsTab && !discoverOpen && !requestsOpen && !forwardMsg) {
+      if (e.key === 'Escape' && panel && !settingsOpen && !quickOpen && !profileUser && !friendsTab && !discoverOpen && !requestsOpen && !forwardMsg && !keysOpen) {
         setPanel(null);
         return;
       }
@@ -263,6 +298,7 @@ export default function App() {
   const clearAllDrafts = () => {
     if (!meId) return;
     drafts.current = {};
+    setDraftIds({});
     clearDrafts(meId);
   };
   const clearAllSaved = () => {
@@ -318,6 +354,12 @@ export default function App() {
     if (p.status === 'offline' && was !== 'offline') toast('You’re offline. Reconnecting…', 'error');
     if (p.status === 'connected' && was === 'offline') toast('Back online', 'success');
   }, [p.status, p.me]);
+
+  // quick "pause alerts" from the sidebar moon button
+  const setDnd = (until, label) => {
+    changePrefs({ ...prefs, pauseUntil: until });
+    toast(until ? `Alerts paused ${label.startsWith('tomorrow') ? 'until 9 am' : 'for ' + label}` : 'Alerts are back on', 'success');
+  };
 
   const doBlock = async (u) => {
     const res = await p.blockUser(u.id);
@@ -523,6 +565,10 @@ export default function App() {
         msgRequestCount={requestList.length}
         pendingOut={pendingOut}
         onOpenRequests={() => setRequestsOpen(true)}
+        drafts={draftIds}
+        mentions={mentionCounts}
+        dnd={{ until: prefs.pauseUntil || 0, paused: !!prefs.pause }}
+        onDnd={setDnd}
         messages={shownMessages}
         unread={p.unread}
         active={p.active}
@@ -558,6 +604,8 @@ export default function App() {
         onDraft={(text) => {
           drafts.current[p.active] = text;
           saveDraft(p.me.id, p.active, text);
+          const id = p.active;
+          setDraftIds((cur) => (!!cur[id] === !!text ? cur : { ...cur, [id]: !!text }));
         }}
         panel={panel}
         onPanel={setPanel}
@@ -717,6 +765,7 @@ export default function App() {
       {forwardMsg && (
         <ForwardDialog msg={forwardMsg} rooms={p.rooms} people={forwardPeople} onPick={forwardTo} onClose={() => setForwardMsg(null)} />
       )}
+      {keysOpen && <ShortcutsDialog onClose={() => setKeysOpen(false)} />}
       <Toaster />
       <Confetti />
       {quickOpen && (

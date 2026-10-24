@@ -48,6 +48,8 @@ const PATHS = {
   image: <><rect x="3.500" y="4.500" width="17" height="15" rx="2.500" /><circle cx="9" cy="10" r="1.500" /><path d="m4 17 5-4.500 4 3.500 3-2.500 4 3.500" /></>,
   tag: <path d="M3.500 12.500V4.500h8l9 9-8 8zM8 8.500v.01" />,
   note: <path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8.500 9h7M8.500 13h4" />,
+  moon: <path d="M20 14.5A8 8 0 0 1 9.500 4a8 8 0 1 0 10.500 10.500z" />,
+  keyboard: <><rect x="3" y="6" width="18" height="12" rx="2.500" /><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" /></>,
   command: <path d="M9 9V6a3 3 0 1 0-3 3zM9 9h6M9 9v6M15 9V6a3 3 0 1 1 3 3zM15 9v6M9 15H6a3 3 0 1 0 3 3zM15 15h3a3 3 0 1 1-3 3zM9 15h6" />,
 };
 

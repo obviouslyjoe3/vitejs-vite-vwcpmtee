@@ -8,6 +8,7 @@ export const defaultPrefs = {
   scope: 'default', // 'default' = DMs + @mentions, 'all' = every unmuted conversation, 'mentions' = @mentions only
   title: true, // unread count in the tab title
   pause: false, // pause all alerts
+  pauseUntil: 0, // quick "do not disturb" from the sidebar: alerts stay silent until this time (ms)
   quiet: false, // quiet hours
   quietFrom: '22:00',
   quietTo: '07:00',
@@ -27,6 +28,7 @@ const mins = (hhmm) => {
 // True while alerts should stay silent (paused, or inside quiet hours, which may span midnight).
 export function alertsSilenced(prefs, now = new Date()) {
   if (prefs.pause) return true;
+  if (prefs.pauseUntil && prefs.pauseUntil > now.getTime()) return true;
   if (!prefs.quiet) return false;
   const cur = now.getHours() * 60 + now.getMinutes();
   const from = mins(prefs.quietFrom);

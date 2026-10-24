@@ -4,6 +4,7 @@ import Composer from './Composer.jsx';
 import Avatar from './Avatar.jsx';
 import Icon from './Icon.jsx';
 import Panel from './Panel.jsx';
+import Lightbox from './Lightbox.jsx';
 import RoomGlyph from './RoomGlyph.jsx';
 import { PollDialog } from './Poll.jsx';
 import { mentionSource } from '../richText.jsx';
@@ -42,6 +43,9 @@ export default function Thread({
   const [away, setAway] = useState(false);
   const [fresh, setFresh] = useState(0);
   const [editId, setEditId] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [dropped, setDropped] = useState(null);
+  const dragDepth = useRef(0);
 
   const byId = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users]);
   const mentionSrc = useMemo(() => mentionSource(users), [users]);
@@ -54,6 +58,39 @@ export default function Thread({
   const dmMode = conv?.dmMode;
   const lockedTools = dmMode === 'incoming' || dmMode === 'waiting' || dmMode === 'request-new' || dmMode === 'request-sent';
   const pinCount = messages.filter((m) => m.pinned && !m.deleted).length;
+  const gallery = useMemo(
+    () => messages.filter((m) => m.image && !m.deleted && !m.system).map((m) => ({ src: m.image, name: m.user.name, ts: m.ts })),
+    [messages]
+  );
+  // dropping a photo on the chat attaches it (only where the composer allows photos)
+  const canDrop = !!conv && !conv.blocked && !offline && !lockedTools && dmMode !== 'closed';
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  const dragProps = canDrop
+    ? {
+        onDragEnter: (e) => {
+          if (!hasFiles(e)) return;
+          e.preventDefault();
+          dragDepth.current += 1;
+          setDragging(true);
+        },
+        onDragOver: (e) => {
+          if (hasFiles(e)) e.preventDefault();
+        },
+        onDragLeave: (e) => {
+          if (!hasFiles(e)) return;
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragging(false);
+        },
+        onDrop: (e) => {
+          if (!hasFiles(e)) return;
+          e.preventDefault();
+          dragDepth.current = 0;
+          setDragging(false);
+          const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
+          setDropped({ file: file || null, n: Date.now() });
+        },
+      }
+    : {};
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -189,7 +226,16 @@ export default function Thread({
 
   return (
     <section className={`thread ${panel ? 'with-panel' : ''}`}>
-      <div className="thread-main">
+      <div className="thread-main" {...dragProps}>
+        {dragging && (
+          <div className="drop-hint" aria-hidden="true">
+            <div>
+              <Icon name="image" size={34} />
+              <strong>Drop a photo to attach it</strong>
+              <span>It goes in the message box, so you can add a caption first.</span>
+            </div>
+          </div>
+        )}
         <header className="thread-head">
           <button className="back" onClick={onBack} aria-label="Back to conversations">
             <Icon name="back" size={22} />
@@ -355,6 +401,7 @@ export default function Thread({
               spellcheck={spellcheck}
               textOnly={dmMode === 'request-new' || dmMode === 'request-sent'}
               maxChars={dmMode === 'request-new' || dmMode === 'request-sent' ? 500 : 2000}
+              dropped={dropped}
             />
           </>
         )}
@@ -408,19 +455,7 @@ export default function Thread({
         />
       )}
 
-      {lightbox && (
-        <div
-          className="lightbox"
-          role="dialog"
-          aria-label="Image preview"
-          tabIndex={-1}
-          ref={(el) => el?.focus()}
-          onClick={() => setLightbox(null)}
-          onKeyDown={(e) => e.key === 'Escape' && setLightbox(null)}
-        >
-          <img src={lightbox} alt="Shared image, full size" />
-        </div>
-      )}
+      {lightbox && <Lightbox images={gallery} src={lightbox} onClose={() => setLightbox(null)} />}
     </section>
   );
 }

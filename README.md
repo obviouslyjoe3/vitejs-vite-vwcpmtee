@@ -18,6 +18,15 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - **Privacy**: appear offline (hides online status and last seen) and choose whether anyone can send you friend requests
 - **Friends, v17**: star friends as **favorites** (they sit at the top of your list and the Online now strip), **search, sort and filter** your friends, see **friends since** dates, get **People you may know** suggestions (friends of friends and people from your private groups, one tap to add), **Accept all / Decline all** on requests, and see how long ago a request was sent
 - **Messages, v17**: click **edited** to see earlier versions (last 5); **Remind me** from the ⋯ menu (20 min, 1 hour, 3 hours, tomorrow 9 am, fires as a toast while Parley is open); messages made only of a few emoji show **big**; new slash commands `/pick pizza, tacos, sushi` and `/8ball will it work?` (both decided on the server)
+- **New in v18**
+  - **Photo viewer**: click any photo to open a gallery of every photo in the conversation. Use ← / → (or the side buttons) to move between them, click to zoom, and download from the top bar
+  - **Drag and drop**: drop a photo anywhere on the chat to attach it to your message
+  - **Pause alerts** (moon button in the sidebar header): silence sounds and desktop alerts for 30 minutes, 1 hour, 4 hours or until 9 am. Unread counts keep updating, and it turns itself off when the time is up
+  - **Recent reactions**: the reaction picker shows the ones you used last at the top
+  - **Draft and @ markers** in the sidebar: a *Draft* tag on conversations holding an unsent message, and an **@** badge when someone mentioned you (this includes the global room)
+  - **Keyboard shortcut list**: press **?** anywhere (not while typing)
+  - **Look**: softer rounded surfaces, squircle avatars, a gentler active-conversation highlight, date dividers drawn as lines, and a floating message box with a focus glow
+- **Profile pictures**: upload one in Settings > Profile. It is cropped to a square and shrunk in your browser, then shows everywhere your avatar does. Remove it any time to go back to your color and first letter
 - **Online now** strip in the sidebar: friends who are online right now, one tap to message them
 - **Toasts** for saves, blocks, connection drops and incoming friend requests, and **confetti** when you send or react with 🎉
 - **Chat backgrounds**: dots, plain, grid, aurora or dusk (Settings > Appearance)

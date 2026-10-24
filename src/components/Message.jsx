@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import Icon from './Icon.jsx';
 import { PollView } from './Poll.jsx';
@@ -7,6 +7,7 @@ import { REACTIONS } from '../constants.js';
 import Emoji from '../Emoji.jsx';
 import { fmtClock, fmtStamp, reducedMotion } from '../format.js';
 import { REMIND_CHOICES } from '../reminders.js';
+import { loadRecents, pushRecent } from '../recents.js';
 
 // A message made only of a few emoji is shown big, without a bubble.
 const JUMBO_RE = /^(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}])*\s*){1,5}$/u;
@@ -37,6 +38,13 @@ export default function Message({
   const [remindOpen, setRemindOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const toolsRef = useRef(null);
+  // reactions you used lately, shown first in the picker
+  const recents = useMemo(() => (picking ? loadRecents().filter((e) => REACTIONS.includes(e)) : []), [picking]);
+  const react = (e) => {
+    pushRecent(e);
+    onReact(msg.id, e);
+    setPicking(false);
+  };
 
   // close popovers on an outside click or Escape
   useEffect(() => {
@@ -264,15 +272,18 @@ export default function Message({
                 </button>
                 {picking && (
                   <div className="picker" role="menu">
+                    {recents.length > 0 && (
+                      <div className="picker-recent" role="group" aria-label="Recently used">
+                        <span>Recent</span>
+                        {recents.map((e) => (
+                          <button key={e} role="menuitem" onClick={() => react(e)} aria-label={`React with ${e}`}>
+                            <Emoji char={e} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {REACTIONS.map((e) => (
-                      <button
-                        key={e}
-                        role="menuitem"
-                        onClick={() => {
-                          onReact(msg.id, e);
-                          setPicking(false);
-                        }}
-                      >
+                      <button key={e} role="menuitem" onClick={() => react(e)}>
                         <Emoji char={e} />
                       </button>
                     ))}

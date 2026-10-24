@@ -194,6 +194,74 @@ function ProfilePreview({ me, draft }) {
   );
 }
 
+
+// Crop the middle square of a picture and shrink it to a small JPEG for a profile picture.
+function photoToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) return reject(new Error('Choose an image file.'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.width, img.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 192;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, 192, 192);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 192, 192);
+      URL.revokeObjectURL(url);
+      let out = canvas.toDataURL('image/jpeg', 0.85);
+      if (out.length > 60000) out = canvas.toDataURL('image/jpeg', 0.6);
+      if (out.length > 60000) reject(new Error('That picture is too detailed. Try another one.'));
+      else resolve(out);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('That file could not be read as an image.'));
+    };
+    img.src = url;
+  });
+}
+
+function PhotoCard({ me, onProfile }) {
+  const fileRef = useRef(null);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const change = async (file) => {
+    if (!file) return;
+    setNote('');
+    setBusy(true);
+    try {
+      const res = await onProfile({ photo: await photoToDataUrl(file) });
+      setNote(res?.error || 'Saved');
+    } catch (err) {
+      setNote(err.message);
+    }
+    setBusy(false);
+    setTimeout(() => setNote(''), 2400);
+  };
+  return (
+    <Card title="Profile picture">
+      <div className="photo-row">
+        <Avatar user={me} size={72} />
+        <div className="photo-actions">
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { change(e.target.files[0]); e.target.value = ''; }} />
+          <button type="button" className="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
+            {me.photo ? 'Change picture' : 'Upload a picture'}
+          </button>
+          {me.photo && (
+            <button type="button" className="text-btn" disabled={busy} onClick={() => onProfile({ photo: '' })}>
+              Remove
+            </button>
+          )}
+          {note && <span className={note === 'Saved' ? 'saved' : 'form-error inline'} role="status">{note}</span>}
+        </div>
+      </div>
+      <p className="hint">Square pictures work best. Without one, you get your color and first letter.</p>
+    </Card>
+  );
+}
+
 function ProfileSection({ me, onColor, onStatus, onProfile }) {
   const [emoji, setEmoji] = useState(me.status?.emoji || '');
   const [text, setText] = useState(me.status?.text || '');
@@ -239,6 +307,8 @@ function ProfileSection({ me, onColor, onStatus, onProfile }) {
   return (
     <>
       <ProfilePreview me={me} draft={{ bio: bio.trim(), pronouns: pronouns.trim(), tz, location: location.trim(), website: website.trim(), interests }} />
+
+      <PhotoCard me={me} onProfile={onProfile} />
 
       <Card title="Banner">
         <div className="banner-picker" role="radiogroup" aria-label="Profile banner">
@@ -580,6 +650,7 @@ const SHORTCUTS = [
   [[MOD, 'I'], 'Italic the selection'],
   [['Alt', '↑ / ↓'], 'Previous / next conversation'],
   [['Esc'], 'Close dialogs, menus and side panels'],
+  [['?'], 'Show the shortcut list from anywhere'],
   [['@'], 'Mention someone'],
   [[':'], 'Emoji shortcodes, like :fire:'],
 ];
