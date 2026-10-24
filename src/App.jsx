@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParley, dmId } from './useParley.js';
-import { loadPrefs, savePrefs, beep, showDesktop, askDesktopPermission } from './notify.js';
+import { loadPrefs, savePrefs, defaultPrefs, alertsSilenced, beep, showDesktop, askDesktopPermission } from './notify.js';
 import Auth from './components/Auth.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Thread from './components/Thread.jsx';
@@ -11,7 +11,7 @@ import Friends from './components/Friends.jsx';
 import Discover from './components/Discover.jsx';
 import Logo from './components/Logo.jsx';
 import {
-  loadAppearance, saveAppearance, applyAppearance,
+  loadAppearance, saveAppearance, applyAppearance, defaultAppearance, clearDrafts,
   loadConvPrefs, saveConvPrefs, loadDrafts, saveDraft, loadSaved, saveSaved,
 } from './prefs.js';
 
@@ -45,24 +45,30 @@ export default function App() {
   const onIncoming = useCallback((msg) => {
     const { me, prefs: pf } = live.current;
     if (!me || msg.user.id === me.id) return;
+    if (alertsSilenced(pf)) return; // paused or quiet hours
     const isDm = msg.room.startsWith('dm:');
     const mentioned =
       !!msg.text && msg.text.toLowerCase().includes('@' + me.name.toLowerCase());
-    if (!isDm && !mentioned) return; // rooms stay quiet unless you are mentioned
     if (live.current.muted?.includes(msg.room) && !mentioned) return; // muted: only @mentions get through
+    if (pf.scope === 'mentions' && !mentioned) return;
+    if (pf.scope !== 'all' && !isDm && !mentioned) return; // default: rooms stay quiet unless you are mentioned
     if (document.hasFocus() && !document.hidden && msg.room === live.current.active) return;
-    if (pf.sound) beep();
+    if (pf.sound) beep(pf.volume);
     if (pf.desktop && document.hidden) {
-      showDesktop(
-        isDm ? msg.user.name : `${msg.user.name} mentioned you in #${msg.room}`,
-        msg.text || (msg.poll ? 'Started a poll' : 'Sent an image')
-      );
+      const what = msg.text || (msg.poll ? 'Started a poll' : 'Sent an image');
+      const title = isDm
+        ? msg.user.name
+        : mentioned
+        ? `${msg.user.name} mentioned you in #${msg.room}`
+        : `${msg.user.name} in #${msg.room}`;
+      showDesktop(title, pf.preview ? what : 'New message');
     }
   }, []);
 
   const onFriendRequest = useCallback((from) => {
     const { prefs: pf } = live.current;
-    if (pf.sound) beep();
+    if (alertsSilenced(pf)) return;
+    if (pf.sound) beep(pf.volume);
     if (pf.desktop && document.hidden) showDesktop(from.name, 'Sent you a friend request');
   }, []);
 
@@ -118,8 +124,8 @@ export default function App() {
     0
   );
   useEffect(() => {
-    document.title = totalUnread ? `(${totalUnread}) Parley` : 'Parley';
-  }, [totalUnread]);
+    document.title = totalUnread && prefs.title ? `(${totalUnread}) Parley` : 'Parley';
+  }, [totalUnread, prefs.title]);
 
   // Ctrl/Cmd+K opens the quick switcher
   useEffect(() => {
@@ -140,6 +146,22 @@ export default function App() {
     }
     setPrefs(value);
     savePrefs(value);
+  };
+
+  const resetSettings = () => {
+    setAppearance({ ...defaultAppearance });
+    setPrefs({ ...defaultPrefs });
+    savePrefs({ ...defaultPrefs });
+  };
+  const clearAllDrafts = () => {
+    if (!meId) return;
+    drafts.current = {};
+    clearDrafts(meId);
+  };
+  const clearAllSaved = () => {
+    if (!meId) return;
+    setSaved([]);
+    saveSaved(meId, []);
   };
 
   // People you can talk to: your friends, plus anyone you already have a DM with (read-only if no longer friends)
@@ -285,7 +307,10 @@ export default function App() {
         onSetTopic={p.setTopic}
         onBack={() => setView('list')}
         onSend={(payload) => p.send(p.active, payload)}
-        onTyping={() => p.sendTyping(p.active)}
+        onTyping={() => prefs.typing && p.sendTyping(p.active)}
+        sendKey={prefs.sendKey}
+        shortcodes={prefs.shortcodes}
+        spellcheck={prefs.spellcheck}
         onReact={(id, emoji) => p.react(p.active, id, emoji)}
         onEdit={(id, text) => p.edit(p.active, id, text)}
         onDelete={(id) => p.remove(p.active, id)}
@@ -304,6 +329,10 @@ export default function App() {
           onChangePassword={p.changePassword}
           onLogout={logout}
           onPrefs={changePrefs}
+          savedCount={saved.length}
+          onClearDrafts={clearAllDrafts}
+          onClearSaved={clearAllSaved}
+          onReset={resetSettings}
           onClose={() => setSettingsOpen(false)}
         />
       )}

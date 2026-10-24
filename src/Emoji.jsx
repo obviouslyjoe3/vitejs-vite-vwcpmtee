@@ -7,7 +7,7 @@ const ART = Object.fromEntries(Object.entries(EMOJI_ART).map(([k, v]) => [norm(k
 export const hasArt = (c) => !!ART[norm(c)];
 
 export default function Emoji({ char, size, title }) {
-  const art = ART[norm(char || '')];
+  const art = document.documentElement.dataset.emoji === 'system' ? null : ART[norm(char || '')];
   if (!art) return <span className="emoji-native">{char}</span>;
   const style = size ? { width: size, height: size } : undefined;
   return (
@@ -28,6 +28,7 @@ const keys = Object.keys(ART).sort((a, b) => b.length - a.length);
 const EMOJI_RE = new RegExp('(' + keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\uFE0F?').join('|') + ')', 'g');
 
 export function withEmoji(text, keyBase = 'e') {
+  if (document.documentElement.dataset.emoji === 'system') return text;
   if (!text || !EMOJI_RE.test(text)) {
     EMOJI_RE.lastIndex = 0;
     return text;

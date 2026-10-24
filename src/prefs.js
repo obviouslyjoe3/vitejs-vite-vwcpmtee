@@ -13,7 +13,17 @@ const set = (key, value) => {
   } catch {}
 };
 
-export const defaultAppearance = { theme: 'system', accent: 'violet', style: 'bubbles', size: 'm' };
+export const defaultAppearance = {
+  theme: 'system',
+  accent: 'violet',
+  style: 'bubbles',
+  size: 'm',
+  density: 'comfortable', // 'comfortable' | 'compact'
+  clock: 'system', // 'system' | '12' | '24'
+  motion: 'system', // 'system' | 'full' | 'reduced'
+  avatars: true, // show avatars beside messages
+  emoji: 'parley', // 'parley' (drawn emoji) | 'system'
+};
 export const loadAppearance = () => {
   const a = get('parley:appearance', defaultAppearance);
   try {
@@ -32,6 +42,11 @@ export const applyAppearance = (a) => {
   root.dataset.accent = a.accent;
   root.dataset.style = a.style;
   root.dataset.size = a.size;
+  root.dataset.density = a.density || 'comfortable';
+  root.dataset.clock = a.clock || 'system';
+  root.dataset.motion = a.motion || 'system';
+  root.dataset.avatars = a.avatars === false ? 'off' : 'on';
+  root.dataset.emoji = a.emoji || 'parley';
 };
 
 // Starred and muted conversations are remembered per person on this browser.
@@ -56,6 +71,8 @@ export const saveDraft = (meId, conv, text) => {
   else delete all[conv];
   set(draftKey(meId), all);
 };
+
+export const clearDrafts = (meId) => set(draftKey(meId), {});
 
 // Saved messages ("save for later"): snapshots kept per person on this browser.
 const savedKey = (meId) => `parley:saved:${meId}`;

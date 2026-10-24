@@ -5,15 +5,15 @@ import { PollView } from './Poll.jsx';
 import { renderRich } from '../richText.jsx';
 import { REACTIONS } from '../constants.js';
 import Emoji from '../Emoji.jsx';
+import { fmtClock, reducedMotion } from '../format.js';
 
 
-const clock = (ts) =>
-  new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const clock = (ts) => fmtClock(ts);
 
 export const jumpTo = (id) => {
   const el = document.getElementById('m-' + id);
   if (!el) return false;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' });
   el.classList.add('flash');
   setTimeout(() => el.classList.remove('flash'), 1600);
   return true;

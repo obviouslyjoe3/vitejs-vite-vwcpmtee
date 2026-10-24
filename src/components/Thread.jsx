@@ -27,6 +27,7 @@ export default function Thread({
   onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers,
   onDraft, onPanel, onStar, onMute, onSetTopic, onJumped,
   onBack, onSend, onTyping, onReact, onEdit, onDelete, onPin, onVote,
+  sendKey = 'enter', shortcodes = true, spellcheck = true,
 }) {
   const scroller = useRef(null);
   const stick = useRef(true);
@@ -273,6 +274,9 @@ export default function Thread({
             setReplyTo(null);
           }}
           onTyping={onTyping}
+          sendKey={sendKey}
+          shortcodes={shortcodes}
+          spellcheck={spellcheck}
         />
         )}
       </div>

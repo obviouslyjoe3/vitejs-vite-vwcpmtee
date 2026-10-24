@@ -35,6 +35,7 @@ function fileToDataUrl(file) {
 export default function Composer({
   placeholder, disabled, users, me, replyTo, draft = '', onDraft,
   onCancelReply, onSend, onTyping, onOpenPoll, onEditLast,
+  sendKey = 'enter', shortcodes = true, spellcheck = true,
 }) {
   const [text, setText] = useState(draft);
   const [image, setImage] = useState(null);
@@ -105,7 +106,7 @@ export default function Composer({
       return onOpenPoll?.();
     }
     if (/^\/shrug(\s|$)/i.test(out)) out = (out.slice(6).trim() + ' ¯\\_(ツ)_/¯').trim();
-    onSend({ text: replaceShortcodes(out), image });
+    onSend({ text: shortcodes ? replaceShortcodes(out) : out, image });
     update('');
     setImage(null);
     setNote('');
@@ -224,9 +225,13 @@ export default function Composer({
       e.preventDefault();
       return wrap('_');
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      send();
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+      // 'enter' mode: Enter sends, Shift+Enter breaks the line. 'mod' mode: Ctrl/Cmd+Enter sends, Enter breaks the line.
+      const sends = sendKey === 'mod' ? mod : !e.shiftKey;
+      if (sends) {
+        e.preventDefault();
+        send();
+      }
     }
   };
 
@@ -304,6 +309,7 @@ export default function Composer({
           rows={1}
           onChange={change}
           onKeyDown={keyDown}
+          spellCheck={spellcheck}
           onPaste={(e) => {
             const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
             if (file) {
@@ -360,7 +366,11 @@ export default function Composer({
           <button className="tool" onClick={() => wrap('`')} disabled={disabled} aria-label="Code" title="Code">
             <Icon name="code" size={16} />
           </button>
-          <span className="bar-hint">Enter to send · Shift+Enter for a new line · ↑ edits your last message</span>
+          <span className="bar-hint">
+            {sendKey === 'mod'
+              ? 'Ctrl/Cmd+Enter to send · Enter for a new line · ↑ edits your last message'
+              : 'Enter to send · Shift+Enter for a new line · ↑ edits your last message'}
+          </span>
           <button className="send" onClick={send} disabled={!canSend} aria-label="Send message">
             <Icon name="send" size={16} /> Send
           </button>

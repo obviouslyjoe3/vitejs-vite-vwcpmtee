@@ -27,8 +27,11 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - Unread counts that survive reloads, a "New" divider, jump-to-latest, mark all read
 - Star and mute conversations; unsent drafts are kept per conversation
 - Custom status (emoji and text); pick your avatar color
-- Appearance: light, dark or system; five accents; bubble or flat message style; three text sizes
-- Alerts for DMs and mentions: sound, desktop notifications, unread count in the tab title
+- **Settings** (two-pane dialog: Profile, Account, Appearance, Notifications, Messaging, Shortcuts, Data & reset)
+  - Appearance: theme cards (system/light/dark), five accents, bubble or flat style, text size, comfortable or compact spacing, avatars on/off, 12/24-hour clock, Parley or system emoji, animations auto/full/reduced, with a live preview
+  - Notifications: pause all, quiet hours (can span midnight), choose what alerts you (DMs + @mentions, everything, or @mentions only), sound with volume and a test button, desktop notifications with optional message text, tab-title unread count
+  - Messaging: send with Enter or Ctrl/Cmd+Enter, shortcode conversion, spell check, share typing status on/off
+  - Data: clear drafts, clear saved messages, reset all settings (each asks to confirm)
 - Live presence, last-seen times, typing indicators, automatic reconnect
 - Messages saved on the server in `.data/parley.json`
 

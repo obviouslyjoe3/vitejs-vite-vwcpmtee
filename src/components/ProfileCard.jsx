@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { fmtClock } from '../format.js';
 import Avatar from './Avatar.jsx';
 import Icon from './Icon.jsx';
 import Emoji from '../Emoji.jsx';
@@ -16,7 +17,7 @@ const ago = (ts) => {
 export const localTime = (tz) => {
   if (!tz) return null;
   try {
-    return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: tz });
+    return fmtClock(Date.now(), tz);
   } catch {
     return null;
   }

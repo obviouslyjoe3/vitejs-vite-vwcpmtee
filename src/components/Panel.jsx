@@ -5,9 +5,9 @@ import { ProfileFacts } from './ProfileCard.jsx';
 import { GROUP_ICONS } from '../constants.js';
 import { highlight, stripMarks } from '../richText.jsx';
 import Emoji from '../Emoji.jsx';
+import { fmtStamp } from '../format.js';
 
-const when = (ts) =>
-  new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const when = (ts) => fmtStamp(ts);
 
 const snippet = (m) => stripMarks(m.text || (m.poll ? `Poll: ${m.poll.question}` : m.image ? 'Photo' : ''));
 
