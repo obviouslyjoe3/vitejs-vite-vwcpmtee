@@ -15,13 +15,13 @@ const set = (key, value) => {
 
 export const defaultAppearance = {
   theme: 'system',
-  accent: 'violet',
+  accent: 'cobalt',
   style: 'bubbles',
   size: 'm',
   density: 'comfortable', // 'comfortable' | 'compact'
   clock: 'system', // 'system' | '12' | '24'
   motion: 'system', // 'system' | 'full' | 'reduced'
-  wall: 'dots', // chat background: 'dots' | 'plain' | 'grid' | 'aurora' | 'dusk'
+  wall: 'plain', // chat background: 'dots' | 'plain' | 'grid' | 'aurora' | 'dusk'
   avatars: true, // show avatars beside messages
   emoji: 'parley', // 'parley' (drawn emoji) | 'system'
 };

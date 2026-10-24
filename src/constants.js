@@ -23,6 +23,7 @@ export const STATUS_PRESETS = [
 ];
 
 export const ACCENTS = [
+  ['cobalt', 'Cobalt', '#2150E8'],
   ['violet', 'Violet', '#5B3FD9'],
   ['teal', 'Teal', '#0F8F73'],
   ['rose', 'Rose', '#C2347A'],

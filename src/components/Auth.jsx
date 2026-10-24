@@ -41,8 +41,11 @@ export default function Auth({ status, error, onLogin, onRegister }) {
     <main className="join">
       <div className="join-side">
         <div className="join-card">
-          <Logo size={64} />
-          <h1>parley</h1>
+          <div className="join-brand">
+            <Logo size={44} />
+            <span>parley</span>
+          </div>
+          <h1>{registering ? 'Make your account' : 'Welcome back'}</h1>
           <p className="join-sub">
             {registering
               ? 'Make an account to chat in public rooms and with your friends.'
@@ -113,6 +116,7 @@ export default function Auth({ status, error, onLogin, onRegister }) {
       </div>
 
       <aside className="join-stage" aria-hidden="true">
+        <div className="bunting" />
         <div className="preview-win">
           <div className="preview-head">
             <span>#</span> design-crit <small>4 online</small>
@@ -136,6 +140,7 @@ export default function Auth({ status, error, onLogin, onRegister }) {
             </div>
           </div>
         </div>
+        <p className="stage-line">Public rooms, private groups and your friends, in one place.</p>
       </aside>
     </main>
   );

@@ -9,6 +9,9 @@ Real-time chat built with React, Vite and Socket.IO.
 Open the URL in two tabs (or on two devices) and join with different names.
 The chat server runs inside Vite's dev server, so there is nothing else to start.
 
+## v22 layout
+The app is now a full-bleed three-column workspace: an icon rail (Chats, Friends, Requests, Rooms, alerts, you), the conversation list (filter tabs: All, Unread, Rooms, People) and the thread. On phones the rail becomes a tab bar. Message actions float beside the bubble, and tap a message on touch screens to show them. Fonts are Archivo and Public Sans (loaded in `index.html`); the default accent is Cobalt, and the other accents still work.
+
 ## Features
 - One shared public room, **global**, that everyone joins. It is silent by default: no unread badge, sounds or desktop alerts (an @mention still gets through)
 - Rooms (create your own, edit the topic) and private direct messages, online or offline

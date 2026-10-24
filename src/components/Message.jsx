@@ -79,6 +79,17 @@ export default function Message({
     };
   }, [historyOpen]);
 
+  // On touch screens there is no hover: tapping a message shows its actions
+  const [tap, setTap] = useState(false);
+  useEffect(() => {
+    if (!tap) return undefined;
+    const away = (e) => {
+      if (!e.target.closest?.('#m-' + msg.id)) setTap(false);
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [tap, msg.id]);
+
   const mine = msg.user.id === me.id;
   const reactions = Object.entries(msg.reactions || {});
   const canAct = !msg.pending && !msg.failed && !msg.deleted && !locked;
@@ -118,7 +129,7 @@ export default function Message({
   return (
     <div
       id={'m-' + msg.id}
-      className={`msg ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''} ${msg.pinned ? 'pinned' : ''}`}
+      className={`msg ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''} ${msg.pinned ? 'pinned' : ''} ${tap ? 'tap-open' : ''}`}
     >
       <div className="msg-side">
         {!grouped && (
@@ -199,6 +210,9 @@ export default function Message({
             </div>
           ) : (
             <div
+              onClick={(e) => {
+                if (window.matchMedia?.('(hover: none)').matches && !e.target.closest('a, button, img, input, textarea, .spoiler')) setTap((v) => !v);
+              }}
               className={`bubble ${msg.pending ? 'pending' : ''} ${msg.failed ? 'failed' : ''} ${
                 msg.image && !msg.text ? 'image-only' : ''
               } ${msg.action ? 'action' : ''} ${msg.poll ? 'has-poll' : ''} ${isJumbo(msg) ? 'jumbo' : ''}`}
