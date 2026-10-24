@@ -94,7 +94,7 @@ const SCHEMA = '2';
 export const purgeLegacyData = () => {
   try {
     if (localStorage.getItem(SCHEMA_KEY) === SCHEMA) return;
-    const keep = new Set(['parley:appearance', 'parley:prefs', 'parley:theme', SCHEMA_KEY]);
+    const keep = new Set(['parley:appearance', 'parley:prefs', 'parley:theme', 'parley:token', SCHEMA_KEY]);
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('parley:') && !keep.has(key)) localStorage.removeItem(key);
     }

@@ -97,6 +97,7 @@ export default function Message({
       </div>
 
       <div className="msg-main">
+        {grouped && <time className="hover-time" aria-hidden="true">{clock(msg.ts)}</time>}
         {!grouped && (
           <div className="msg-meta">
             <button className="who-btn name" onClick={() => onProfile(author)}>

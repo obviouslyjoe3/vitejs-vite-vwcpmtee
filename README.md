@@ -37,7 +37,7 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 
 ## Notes
 - To test with two people, use two different browsers or a private window.
-- Accounts: username + password (scrypt-hashed). Sign-ins last 30 days and are shared by all tabs in a browser.
+- Accounts: username + password (scrypt-hashed). Sign-ins last 90 days, are extended every time you come back (so you stay signed in as long as you visit now and then), and are shared by all tabs in a browser.
 - Friends: add people by exact username. DMs need friendship; unfriending keeps history readable but closes the chat.
 - Public rooms: browse and join from the compass button. You only get messages from rooms you joined. Owners can ban people.
 - Data from older versions (name-only users and chats) is wiped on first start of this version.

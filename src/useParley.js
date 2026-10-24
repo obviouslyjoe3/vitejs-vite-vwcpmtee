@@ -269,7 +269,9 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
     if (!tokenRef.current) return;
     socket.emit('auth:resume', { token: tokenRef.current }, (res) => {
       if (res?.error) {
-        if (res.expired) signedOut(res.error);
+        if (res.expired) return signedOut(res.error);
+        // Not an expiry (a hiccup, or this tab is already signed in): keep the saved sign-in and try again.
+        if (res.error !== 'Already signed in.') setTimeout(() => socket.connected && resume(), 1500);
         return;
       }
       start(res);

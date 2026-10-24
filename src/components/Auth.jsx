@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Logo from './Logo.jsx';
+import Icon from './Icon.jsx';
 
 export default function Auth({ status, error, onLogin, onRegister }) {
   const [mode, setMode] = useState('login'); // 'login' | 'register'
@@ -7,6 +8,7 @@ export default function Auth({ status, error, onLogin, onRegister }) {
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reveal, setReveal] = useState(false);
   const [problem, setProblem] = useState('');
   const offline = status === 'offline';
   const registering = mode === 'register';
@@ -72,22 +74,27 @@ export default function Auth({ status, error, onLogin, onRegister }) {
             {registering && <p className="hint">3 to 20 letters, numbers or _. Friends find you by this, and it can’t be changed later.</p>}
 
             <label htmlFor="password" className="spaced">Password</label>
+            <div className="pw-wrap">
             <input
               id="password"
-              type="password"
+              type={reveal ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               maxLength={128}
               autoComplete={registering ? 'new-password' : 'current-password'}
               placeholder={registering ? 'At least 8 characters' : 'Your password'}
             />
+              <button type="button" className="pw-eye" onClick={() => setReveal((v) => !v)} aria-label={reveal ? 'Hide password' : 'Show password'} aria-pressed={reveal}>
+                <Icon name={reveal ? 'eyeOff' : 'eye'} size={18} />
+              </button>
+            </div>
 
             {registering && (
               <>
                 <label htmlFor="again" className="spaced">Repeat password</label>
                 <input
                   id="again"
-                  type="password"
+                  type={reveal ? 'text' : 'password'}
                   value={again}
                   onChange={(e) => setAgain(e.target.value)}
                   maxLength={128}
@@ -122,6 +129,10 @@ export default function Auth({ status, error, onLogin, onRegister }) {
             <div className="pv-react">🔥 3</div>
             <div className="pv mine">
               <p>Shipping it after lunch 🚀</p>
+            </div>
+            <div className="pv pv-typing">
+              <i style={{ background: '#2A6FBF' }}>J</i>
+              <p><span className="dots"><b /><b /><b /></span></p>
             </div>
           </div>
         </div>

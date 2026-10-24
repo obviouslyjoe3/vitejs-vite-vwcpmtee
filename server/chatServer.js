@@ -33,8 +33,9 @@ const USERNAME_RE = /^[A-Za-z][A-Za-z0-9_]{2,19}$/;
 const RESERVED_NAMES = ['parley', 'system', 'admin', 'everyone', 'here', 'channel'];
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 128;
-const SESSION_DAYS = 30;
-const MAX_SESSIONS = 10; // per account; the oldest sign-in is dropped past this
+const SESSION_DAYS = 90; // a sign-in lasts this long without use...
+const RENEW_AFTER_MS = 86_400_000; // ...and each visit pushes the end date out again (at most once a day)
+const MAX_SESSIONS = 25; // per account; the least recently used sign-in is dropped past this
 const MAX_FRIENDS = 200;
 const MAX_OUTGOING_REQUESTS = 50;
 const MAX_OWNED_ROOMS = 10;
@@ -412,9 +413,14 @@ export function attachChat(httpServer) {
       const now = Date.now();
       const token = newToken();
       user.sessions = (user.sessions || []).filter((s) => s.exp > now);
-      user.sessions.push({ h: tokenHash(token), at: now, exp: now + SESSION_DAYS * 86_400_000 });
-      if (user.sessions.length > MAX_SESSIONS) user.sessions = user.sessions.slice(-MAX_SESSIONS);
-      save();
+      user.sessions.push({ h: tokenHash(token), at: now, seen: now, exp: now + SESSION_DAYS * 86_400_000 });
+      if (user.sessions.length > MAX_SESSIONS) {
+        user.sessions.sort((a, b) => (a.seen || a.at) - (b.seen || b.at));
+        user.sessions = user.sessions.slice(-MAX_SESSIONS);
+      }
+      // Written straight away (not on the usual short delay) so a restart right after signing in can't lose it.
+      clearTimeout(saveTimer);
+      persist();
       return token;
     };
 
@@ -518,8 +524,25 @@ export function attachChat(httpServer) {
       if (socket.data.user) return ack?.({ error: 'Already signed in.' });
       const h = typeof p?.token === 'string' && p.token.length < 200 ? tokenHash(p.token) : null;
       const now = Date.now();
-      const user = h && [...users.values()].find((u) => u.sessions?.some((s) => s.h === h && s.exp > now));
+      let user = null;
+      let sess = null;
+      if (h) {
+        for (const u of users.values()) {
+          const found = u.sessions?.find((s) => s.h === h && s.exp > now);
+          if (found) {
+            user = u;
+            sess = found;
+            break;
+          }
+        }
+      }
       if (!user) return ack?.({ error: 'Your session has ended. Please sign in again.', expired: true });
+      // Staying signed in: every visit extends the sign-in, so only a long absence ends it.
+      if (now - (sess.seen || sess.at) > RENEW_AFTER_MS) {
+        sess.seen = now;
+        sess.exp = now + SESSION_DAYS * 86_400_000;
+        save();
+      }
       socket.data.tokenHash = h;
       ack?.(attach(user, undefined));
     });
@@ -1042,6 +1065,14 @@ export function attachChat(httpServer) {
       broadcastUser(user);
     });
   });
+
+  // Write any pending changes (sessions included) when the server stops or restarts.
+  const flush = () => {
+    clearTimeout(saveTimer);
+    persist();
+  };
+  httpServer.on('close', flush);
+  io.flush = flush;
 
   return io;
 }

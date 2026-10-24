@@ -41,5 +41,15 @@ const server = http.createServer((req, res) => {
   });
 });
 
-attachChat(server);
+const io = attachChat(server);
+// Hosts stop the app with SIGTERM on every deploy or restart: save first so nobody gets signed out.
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.once(sig, () => {
+    try {
+      io.flush?.();
+    } finally {
+      process.exit(0);
+    }
+  });
+}
 server.listen(port, () => console.log(`Parley is running on port ${port}`));

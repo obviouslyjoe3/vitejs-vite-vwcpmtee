@@ -92,7 +92,11 @@ export default function Thread({
       <section className="thread">
         <div className="thread-main">
           <div className="thread-empty">
-            <p>Choose a room or a person to start talking.</p>
+            <div className="empty-card">
+              <span className="empty-icon"><Icon name="hash" size={26} /></span>
+              <h2>Pick a conversation</h2>
+              <p>Choose a room or a person from the sidebar, or press <kbd>Ctrl</kbd> <kbd>K</kbd> to jump anywhere.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -229,11 +233,15 @@ export default function Thread({
           >
             {messages.length === 0 ? (
               <div className="thread-empty">
-                <p>
-                  {conv.kind === 'dm'
-                    ? `This is the start of your conversation with ${conv.title}.`
-                    : `Nothing in #${conv.title} yet. Send the first message.`}
-                </p>
+                <div className="empty-card">
+                  <span className="empty-icon"><Icon name={conv.kind === 'dm' ? 'user' : 'hash'} size={26} /></span>
+                  <h2>{conv.kind === 'dm' ? conv.title : `#${conv.title}`}</h2>
+                  <p>
+                    {conv.kind === 'dm'
+                      ? `This is the start of your conversation with ${conv.title}.`
+                      : 'Nothing here yet. Send the first message.'}
+                  </p>
+                </div>
               </div>
             ) : (
               rows

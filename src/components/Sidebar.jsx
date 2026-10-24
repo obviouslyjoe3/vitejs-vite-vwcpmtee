@@ -30,6 +30,8 @@ export default function Sidebar({
   const [roomIcon, setRoomIcon] = useState('');
   const [roomPrivate, setRoomPrivate] = useState(false);
   const [roomMembers, setRoomMembers] = useState([]);
+  const [shut, setShut] = useState({});
+  const flip = (k) => setShut((c) => ({ ...c, [k]: !c[k] }));
   const q = query.trim().toLowerCase();
 
   const roomRows = rooms
@@ -142,15 +144,23 @@ export default function Sidebar({
         {starredRows.length > 0 && (
           <section>
             <div className="side-title">
-              <h3>Starred</h3>
+              <h3>
+                <button type="button" className={`side-fold ${shut.starred ? 'shut' : ''}`} onClick={() => flip('starred')} aria-expanded={!shut.starred}>
+                  <Icon name="chevron" size={12} /> Starred
+                </button>
+              </h3>
             </div>
-            <ul className="convs">{starredRows.map(row)}</ul>
+            {!shut.starred && <ul className="convs">{starredRows.map(row)}</ul>}
           </section>
         )}
 
         <section>
           <div className="side-title">
-            <h3>Rooms &amp; groups</h3>
+            <h3>
+                <button type="button" className={`side-fold ${shut.rooms ? 'shut' : ''}`} onClick={() => flip('rooms')} aria-expanded={!shut.rooms}>
+                  <Icon name="chevron" size={12} /> Rooms &amp; groups
+                </button>
+              </h3>
             <span className="title-actions">
               <button className="icon-btn" onClick={onOpenDiscover} aria-label="Browse public rooms" title="Browse public rooms">
                 <Icon name="compass" size={15} />
@@ -220,7 +230,7 @@ export default function Sidebar({
             </form>
           )}
 
-          <ul className="convs">{rest(roomRows).map(row)}</ul>
+          {!shut.rooms && <ul className="convs">{rest(roomRows).map(row)}</ul>}
           {q && roomRows.length === 0 && <p className="side-empty">No rooms match.</p>}
           {!q && rooms.length === 0 && (
             <p className="side-empty">
@@ -231,7 +241,11 @@ export default function Sidebar({
 
         <section>
           <div className="side-title">
-            <h3>Friends</h3>
+            <h3>
+                <button type="button" className={`side-fold ${shut.friends ? 'shut' : ''}`} onClick={() => flip('friends')} aria-expanded={!shut.friends}>
+                  <Icon name="chevron" size={12} /> Friends
+                </button>
+              </h3>
             <button
               className="icon-btn with-count"
               onClick={() => onOpenFriends(requestCount ? 'requests' : 'add')}
@@ -258,7 +272,7 @@ export default function Sidebar({
               )}
             </p>
           )}
-          <ul className="convs">{rest(personRows).map(row)}</ul>
+          {!shut.friends && <ul className="convs">{rest(personRows).map(row)}</ul>}
         </section>
       </div>
 
