@@ -27,6 +27,7 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
   - **Keyboard shortcut list**: press **?** anywhere (not while typing)
   - **Look**: softer rounded surfaces, squircle avatars, a gentler active-conversation highlight, date dividers drawn as lines, and a floating message box with a focus glow
 - **Profile pictures**: upload one in Settings > Profile. It is cropped to a square and shrunk in your browser, then shows everywhere your avatar does. Remove it any time to go back to your color and first letter
+- **v21 redesign**: floating rounded panels on a soft backdrop, a light sidebar (dark in dark mode), new cooler palette, Figtree body type, round header tools, a bigger floating message box and pill buttons. On phones the panels go back to full screen
 - **Online now** strip in the sidebar: friends who are online right now, one tap to message them
 - **Toasts** for saves, blocks, connection drops and incoming friend requests, and **confetti** when you send or react with 🎉
 - **Chat backgrounds**: dots, plain, grid, aurora or dusk (Settings > Appearance)
