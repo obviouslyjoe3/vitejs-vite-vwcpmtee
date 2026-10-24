@@ -10,12 +10,13 @@ Open the URL in two tabs (or on two devices) and join with different names.
 The chat server runs inside Vite's dev server, so there is nothing else to start.
 
 ## Features
+- One shared public room, **global**, that everyone joins. It is silent by default: no unread badge, sounds or desktop alerts (an @mention still gets through)
 - Rooms (create your own, edit the topic) and private direct messages, online or offline
 - **Private groups**: invite-only rooms with an owner. Members can add people; the owner can rename, change the icon, remove members or delete the group. Non-members never receive the group or its messages. Groups get an emoji icon (or #), and small notices show who created, added, removed or renamed
 - **Profiles**: pronouns, a short bio and a time zone (Settings > Profile). Click any avatar or name, or anyone in a member list, to open their profile card with local time, status, last seen, member-since and a Message button
 - **Blocking**: block anyone from their profile card. Blocking removes the friendship, cancels pending requests, closes the DM and stops them from messaging you or sending requests (enforced on the server). Their messages in rooms are hidden from you and never alert you, and they are not told. Manage the list in Settings > Privacy & blocking
 - **Privacy**: appear offline (hides online status and last seen) and choose whether anyone can send you friend requests
-- **Getting-started card** for new accounts (profile, first friend, first message) with a progress bar and a little celebration when finished
+- **Online now** strip in the sidebar: friends who are online right now, one tap to message them
 - **Toasts** for saves, blocks, connection drops and incoming friend requests, and **confetti** when you send or react with 🎉
 - **Chat backgrounds**: dots, plain, grid, aurora or dusk (Settings > Appearance)
 - Replies, edit and delete your own messages, 20 emoji reactions

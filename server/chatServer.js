@@ -22,11 +22,7 @@ const MAX_POLL_OPTIONS = 6;
 // Keep in sync with COLORS in src/constants.js
 const COLORS = ['#5B3FD9', '#0F8F73', '#C2347A', '#B8620F', '#2A6FBF', '#7A8A12', '#A33BC4'];
 
-const DEFAULT_ROOMS = [
-  { id: 'lobby', name: 'lobby', topic: 'Say hi to everyone', autoJoin: true },
-  { id: 'ideas', name: 'ideas', topic: 'Half-baked thoughts welcome' },
-  { id: 'off-hours', name: 'off-hours', topic: 'Anything but work' },
-];
+const DEFAULT_ROOMS = [{ id: 'global', name: 'global', topic: 'Say hi to everyone', autoJoin: true }];
 
 // ---- accounts ----
 const USERNAME_RE = /^[A-Za-z][A-Za-z0-9_]{2,19}$/;
@@ -161,6 +157,15 @@ export function attachChat(httpServer) {
     icon: '', owner: null, private: false, members: [], banned: [], createdAt: 0, ...r,
   }));
   const history = saved.history || {}; // roomId -> messages[]
+  // Older data: "lobby" becomes "global" (same id, so history is kept) and the two starter rooms are removed.
+  for (const r of rooms) if (r.id === 'lobby' && r.official) { r.name = 'global'; r.topic = r.topic || 'Say hi to everyone'; }
+  for (const id of ['ideas', 'off-hours']) {
+    const at = rooms.findIndex((r) => r.id === id && r.official);
+    if (at >= 0) {
+      rooms.splice(at, 1);
+      delete history[id];
+    }
+  }
   const requests = saved.requests || []; // pending friend requests: { from, to, ts }
   const connections = new Map(); // userId -> open socket count
   const byName = new Map([...users.values()].map((u) => [u.key, u.id])); // lowercase username -> id

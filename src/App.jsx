@@ -10,6 +10,7 @@ import ProfileCard from './components/ProfileCard.jsx';
 import Friends from './components/Friends.jsx';
 import Discover from './components/Discover.jsx';
 import Logo from './components/Logo.jsx';
+import { QUIET_ROOMS } from './constants.js';
 import Toaster from './components/Toaster.jsx';
 import Confetti from './components/Confetti.jsx';
 import { toast, confetti } from './toast.js';
@@ -54,6 +55,7 @@ export default function App() {
     const mentioned =
       !!msg.text && msg.text.toLowerCase().includes('@' + me.name.toLowerCase());
     if (live.current.blockedIds?.includes(msg.user.id)) return; // blocked people never alert you
+    if (QUIET_ROOMS.includes(msg.room) && !mentioned) return; // the global room never alerts
     if (live.current.muted?.includes(msg.room) && !mentioned) return; // muted: only @mentions get through
     if (pf.scope === 'mentions' && !mentioned) return;
     if (pf.scope !== 'all' && !isDm && !mentioned) return; // default: rooms stay quiet unless you are mentioned

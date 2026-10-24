@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { socket } from './socket.js';
 import { loadReadMap, saveReadMap } from './prefs.js';
+import { QUIET_ROOMS } from './constants.js';
 
 const TOKEN_KEY = 'parley:token';
 const TYPING_MS = 3000;
@@ -107,7 +108,7 @@ function reducer(s, a) {
       const unread = {};
       for (const [conv, list] of Object.entries(a.history)) {
         if (lastRead[conv] === undefined) lastRead[conv] = newestTs(list); // first visit: nothing is "new"
-        unread[conv] = conv === active ? 0 : countUnread(list, lastRead[conv], a.me.id, hide);
+        unread[conv] = conv === active || QUIET_ROOMS.includes(conv) ? 0 : countUnread(list, lastRead[conv], a.me.id, hide);
       }
       const dividers = { ...s.dividers };
       if (active && s.active === null) {
@@ -191,7 +192,7 @@ function reducer(s, a) {
       const mine = m.user.id === s.me?.id;
       const hidden = s.blocked.some((b) => b.id === m.user.id);
       const unread =
-        !mine && !hidden && m.room !== s.active
+        !mine && !hidden && !QUIET_ROOMS.includes(m.room) && m.room !== s.active
           ? { ...s.unread, [m.room]: (s.unread[m.room] || 0) + 1 }
           : s.unread;
       const roomTyping = { ...(s.typing[m.room] || {}) };

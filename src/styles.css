@@ -1183,22 +1183,6 @@ a:hover { text-decoration-color: var(--violet); }
 .confetti i { position: absolute; top: -20px; border-radius: 2px; animation: confetti-fall linear forwards; }
 @keyframes confetti-fall { to { transform: translate(var(--drift), 110vh) rotate(var(--spin)); opacity: 0.9; } }
 
-.welcome { margin: 0 14px 10px; padding: 12px 12px 8px; border-radius: var(--r-lg); background: linear-gradient(160deg, color-mix(in srgb, var(--violet) 32%, transparent), rgba(255, 255, 255, 0.05)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); animation: rise 0.3s var(--ease); }
-.welcome-top { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.welcome-top strong { flex: 1; font-family: var(--display); letter-spacing: -0.01em; }
-.welcome-top span { font-size: 12px; color: var(--side-muted); font-variant-numeric: tabular-nums; }
-.welcome-x { width: 24px; height: 24px; border-radius: 8px; }
-.welcome-bar { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); margin: 8px 0 6px; overflow: hidden; }
-.welcome-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--mint), color-mix(in srgb, var(--violet) 60%, #fff)); transition: width 0.4s var(--ease); }
-.welcome ul { list-style: none; margin: 0; padding: 0; }
-.welcome li button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 4px; border: 0; background: none; border-radius: 10px; color: var(--side-ink); text-align: left; }
-.welcome li button:hover:not(:disabled) { background: var(--side-hover); }
-.welcome li button:disabled { cursor: default; opacity: 0.6; }
-.welcome li b { display: block; font-weight: 600; font-size: 13.5px; }
-.welcome li small { display: block; font-size: 12px; color: var(--side-muted); }
-.welcome li button.done b { text-decoration: line-through; }
-.welcome-dot { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; box-shadow: inset 0 0 0 2px var(--side-muted); color: #0b2a22; }
-.welcome li button.done .welcome-dot { background: var(--mint); box-shadow: none; }
 
 /* chat backgrounds (Settings > Appearance) */
 :root[data-wall='plain'] .messages-wrap { background-image: none; }
@@ -1216,8 +1200,8 @@ a:hover { text-decoration-color: var(--violet); }
 .w-aurora { background-image: radial-gradient(60px 40px at 10% 0%, color-mix(in srgb, var(--violet) 45%, transparent), transparent 80%), radial-gradient(60px 40px at 100% 100%, color-mix(in srgb, var(--mint) 45%, transparent), transparent 80%); }
 .w-dusk { background-image: linear-gradient(180deg, color-mix(in srgb, var(--violet) 40%, transparent), color-mix(in srgb, var(--rose) 28%, transparent)); }
 @media (max-width: 560px) { .wall-picker { grid-template-columns: repeat(3, 1fr); } }
-@media (prefers-reduced-motion: reduce) { .toast, .welcome { animation: none !important; } }
-:root[data-motion='reduced'] .toast, :root[data-motion='reduced'] .welcome { animation: none; }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none !important; } }
+:root[data-motion='reduced'] .toast { animation: none; }
 
 
 /* =====================================================================
@@ -1350,3 +1334,16 @@ body, .sidebar, .thread, .thread-head, .bubble, .panel, .dialog, .msg-meta stron
 :root[data-motion='reduced'] .thread-main, :root[data-motion='reduced'] .pill, :root[data-motion='reduced'] .panel,
 :root[data-motion='reduced'] .convs > li, :root[data-motion='reduced'] .settings-body > *, :root[data-motion='reduced'] .picker button,
 :root[data-motion='reduced'] .splash svg, :root[data-motion='reduced'] .messages > .msg, :root[data-motion='reduced'] .presence::after { animation: none; }
+
+/* "Online now" strip: friends who are here right now, one tap to message */
+.online-strip { margin: 0 14px 8px; padding: 10px 10px 8px; border-radius: var(--r-lg); background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); animation: rise 0.3s var(--ease); }
+.online-head { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--side-muted); margin-bottom: 8px; }
+.online-head b { margin-left: auto; font-weight: 700; color: var(--side-ink); background: rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 0 7px; letter-spacing: 0; }
+.online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); animation: presence-pulse 2.6s ease-out infinite; }
+.online-strip ul { list-style: none; margin: 0; padding: 0 0 2px; display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; }
+.online-strip ul::-webkit-scrollbar { display: none; }
+.online-strip li button { display: grid; justify-items: center; gap: 4px; width: 54px; padding: 4px 0; border: 0; background: none; color: var(--side-ink); border-radius: 10px; transition: background 0.12s, transform 0.12s var(--ease); }
+.online-strip li button:hover { background: var(--side-hover); transform: translateY(-2px); }
+.online-strip li button span { font-size: 11.5px; max-width: 54px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--side-muted); }
+.online-strip .presence { border-color: var(--side-bg-2); }
+.online-more { align-self: center; flex-shrink: 0; font-size: 12px; color: var(--side-muted); padding: 0 4px; }

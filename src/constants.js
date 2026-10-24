@@ -48,3 +48,6 @@ export const replaceShortcodes = (text) =>
 
 // Icons a group can use (empty string means the default #). Keep in sync with GROUP_ICONS in server/chatServer.js
 export const GROUP_ICONS = ['', '💬', '💡', '🎮', '🎵', '📚', '🍕', '🌱', '🚀', '🎨', '⚽', '✈️', '🐶', '☕'];
+
+// The shared public room is silent: no unread badge, sounds or desktop alerts (an @mention still gets through).
+export const QUIET_ROOMS = ['lobby', 'global'];
