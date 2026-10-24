@@ -31,6 +31,7 @@ export default function Thread({
   hiddenCount = 0, onManageBlocked, onUnblock,
   seenAt = 0, onForward, onAcceptRequest, onDeclineRequest, onBlockUser,
   sendKey = 'enter', shortcodes = true, spellcheck = true,
+  reminders = {}, onRemind,
 }) {
   const scroller = useRef(null);
   const stick = useRef(true);
@@ -150,6 +151,8 @@ export default function Thread({
         grouped={grouped}
         mentionSrc={mentionSrc}
         saved={savedIds.has(m.id)}
+        reminderAt={reminders[m.id] || 0}
+        onRemind={lockedTools ? undefined : onRemind}
         nameOf={nameOf}
         forceEdit={editId === m.id}
         onEditStarted={() => setEditId(null)}

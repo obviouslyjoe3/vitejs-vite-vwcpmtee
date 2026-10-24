@@ -33,6 +33,8 @@ const SESSION_DAYS = 90; // a sign-in lasts this long without use...
 const RENEW_AFTER_MS = 86_400_000; // ...and each visit pushes the end date out again (at most once a day)
 const MAX_SESSIONS = 25; // per account; the least recently used sign-in is dropped past this
 const MAX_FRIENDS = 200;
+const MAX_FAVORITES = 20;
+const MAX_EDIT_HISTORY = 5;
 const MAX_BLOCKED = 200;
 const MAX_OUTGOING_REQUESTS = 50;
 const MAX_OWNED_ROOMS = 10;
@@ -132,6 +134,22 @@ const runDice = (text) => {
       : `rolled ${n}d${sides}: ${dice.join(' + ')} = ${total}`;
   }
   if (/^\/flip\s*$/i.test(text)) return `flipped a coin: ${Math.random() < 0.5 ? 'heads' : 'tails'}`;
+  // /pick pizza, tacos, sushi  -> the server chooses, so nobody can fake the draw
+  const pick = /^\/pick\s+(.+)$/i.exec(text);
+  if (pick) {
+    const opts = pick[1].split(/\s*,\s*|\s+or\s+/i).map((o) => o.trim()).filter(Boolean).slice(0, 20);
+    if (opts.length >= 2) return `picked: ${opts[Math.floor(Math.random() * opts.length)].slice(0, 100)} (from ${opts.length} options)`;
+  }
+  const ball = /^\/8ball(?:\s+(.+))?$/i.exec(text);
+  if (ball) {
+    const answers = [
+      'It is certain.', 'Without a doubt.', 'Yes, definitely.', 'Most likely.', 'Signs point to yes.',
+      'Ask again later.', 'Cannot predict now.', 'Better not tell you now.',
+      "Don't count on it.", 'My sources say no.', 'Very doubtful.', 'Outlook not so good.',
+    ];
+    const q = (ball[1] || '').trim().slice(0, 120);
+    return `shook the magic 8-ball${q ? ` (“${q}”)` : ''}: ${answers[Math.floor(Math.random() * answers.length)]}`;
+  }
   return null;
 };
 
@@ -482,11 +500,42 @@ export function attachChat(httpServer) {
     if (targets.length) io.to(targets).emit('user:update', publicUser(u));
   };
 
-  const friendState = (id) => ({
-    friends: [...(users.get(id)?.friends || [])],
-    incoming: requests.filter((r) => r.to === id).map((r) => r.from),
-    outgoing: requests.filter((r) => r.from === id).map((r) => r.to),
-  });
+  const friendState = (id) => {
+    const u = users.get(id);
+    const friends = [...(u?.friends || [])];
+    const reqTs = {};
+    for (const r of requests) {
+      if (r.to === id) reqTs[r.from] = r.ts || 0;
+      else if (r.from === id) reqTs[r.to] = r.ts || 0;
+    }
+    return {
+      friends,
+      incoming: requests.filter((r) => r.to === id).map((r) => r.from),
+      outgoing: requests.filter((r) => r.from === id).map((r) => r.to),
+      favorites: (u?.favorites || []).filter((x) => friends.includes(x)),
+      since: Object.fromEntries(Object.entries(u?.since || {}).filter(([x]) => friends.includes(x))),
+      reqTs,
+    };
+  };
+  // Make two people friends (and remember since when).
+  const makeFriends = (a, b) => {
+    const now = Date.now();
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const u = users.get(x);
+      if (!u.friends.includes(y)) u.friends.push(y);
+      (u.since ||= {})[y] = u.since[y] || now;
+    }
+  };
+  // Forget everything a friendship stored.
+  const unmakeFriends = (a, b) => {
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const u = users.get(x);
+      if (!u) continue;
+      u.friends = u.friends.filter((id) => id !== y);
+      u.favorites = (u.favorites || []).filter((id) => id !== y);
+      if (u.since) delete u.since[y];
+    }
+  };
   const pushFriends = (...ids) => {
     for (const id of ids) {
       io.to(`user:${id}`).emit('friends', friendState(id));
@@ -907,7 +956,10 @@ export function attachChat(httpServer) {
       if (!msg || msg.user.id !== user.id || msg.deleted) return;
       const text = String(p?.text || '').trim().slice(0, 2000);
       if (!text && !msg.image) return;
-      patchMessage(room, msg, { text, edited: true });
+      if (text === msg.text) return;
+      // keep the last few earlier versions so readers can see what changed
+      const prev = [...(msg.prev || []), { text: msg.text || '', ts: msg.editedAt || msg.ts }].slice(-MAX_EDIT_HISTORY);
+      patchMessage(room, msg, { text, edited: true, editedAt: Date.now(), prev });
     });
 
     socket.on('message:delete', (p) => {
@@ -916,7 +968,7 @@ export function attachChat(httpServer) {
       if (!user || !canAccess(user, room)) return;
       const msg = findMessage(room, p?.id);
       if (!msg || msg.user.id !== user.id || msg.deleted) return;
-      patchMessage(room, msg, { deleted: true, text: '', image: null, reactions: {} });
+      patchMessage(room, msg, { deleted: true, text: '', image: null, reactions: {}, prev: [] });
     });
 
     socket.on('message:pin', (p) => {
@@ -1045,8 +1097,9 @@ export function attachChat(httpServer) {
       const user = socket.data.user;
       if (!user) return ack?.({ error: 'Sign in first.' });
       const name = typeof p?.username === 'string' ? p.username.trim().replace(/^@/, '').toLowerCase() : '';
-      if (!name) return ack?.({ error: 'Type a username.' });
-      const other = users.get(byName.get(name));
+      const byIdTarget = typeof p?.id === 'string' ? users.get(p.id) : null;
+      if (!name && !byIdTarget) return ack?.({ error: 'Type a username.' });
+      const other = byIdTarget || users.get(byName.get(name));
       if (!other) return ack?.({ error: 'Nobody has that username.' });
       if (other.id === user.id) return ack?.({ error: 'That is you.' });
       if (areFriends(user.id, other.id)) return ack?.({ error: `You and ${other.name} are already friends.` });
@@ -1059,8 +1112,7 @@ export function attachChat(httpServer) {
       const theirs = requests.findIndex((r) => r.from === other.id && r.to === user.id);
       if (theirs >= 0) {
         requests.splice(theirs, 1);
-        user.friends.push(other.id);
-        other.friends.push(user.id);
+        makeFriends(user.id, other.id);
         acceptThread(user.id, other.id);
         save();
         pushFriends(user.id, other.id);
@@ -1089,8 +1141,7 @@ export function attachChat(httpServer) {
       if (isBlocked(user.id, other.id)) return ack?.({ error: 'That request is no longer there.' });
       if (user.friends.length >= MAX_FRIENDS) return ack?.({ error: 'Your friends list is full.' });
       requests.splice(at, 1);
-      if (!user.friends.includes(other.id)) user.friends.push(other.id);
-      if (!other.friends.includes(user.id)) other.friends.push(user.id);
+      makeFriends(user.id, other.id);
       acceptThread(user.id, other.id);
       save();
       pushFriends(user.id, other.id);
@@ -1118,13 +1169,57 @@ export function attachChat(httpServer) {
       if (!user) return ack?.({ error: 'Sign in first.' });
       const other = friendTarget(ack, p?.id);
       if (!other) return;
-      user.friends = user.friends.filter((id) => id !== other.id);
-      other.friends = other.friends.filter((id) => id !== user.id);
+      unmakeFriends(user.id, other.id);
       delete threads[dmKey(user.id, other.id)]; // unfriending closes the chat again
       save();
       pushFriends(user.id, other.id);
       pushThreads(user.id, other.id);
       ack?.({ ok: true });
+    });
+
+    // Star a friend so they sit at the top of your list.
+    socket.on('friend:favorite', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const id = typeof p?.id === 'string' ? p.id : '';
+      if (!user.friends.includes(id)) return ack?.({ error: 'You can only favorite friends.' });
+      const list = (user.favorites ||= []).filter((x) => user.friends.includes(x));
+      const at = list.indexOf(id);
+      if (at >= 0) list.splice(at, 1);
+      else {
+        if (list.length >= MAX_FAVORITES) return ack?.({ error: `You can favorite up to ${MAX_FAVORITES} friends.` });
+        list.push(id);
+      }
+      user.favorites = list;
+      save();
+      pushFriends(user.id);
+      ack?.({ ok: true, favorite: at < 0 });
+    });
+
+    // People you may know: friends of friends and people from your private groups, ranked by overlap.
+    socket.on('friend:suggestions', (_p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const asked = new Set(requests.filter((r) => r.from === user.id || r.to === user.id).flatMap((r) => [r.from, r.to]));
+      const mine = new Set(user.friends);
+      const score = new Map(); // id -> { mutual, groups }
+      const bump = (id, key) => {
+        if (id === user.id || mine.has(id) || asked.has(id) || !users.has(id)) return;
+        if (isBlocked(user.id, id) || privacyOf(users.get(id)).requests === 'nobody') return;
+        const e = score.get(id) || { mutual: 0, groups: 0 };
+        e[key] += 1;
+        score.set(id, e);
+      };
+      for (const f of user.friends) for (const ff of users.get(f)?.friends || []) bump(ff, 'mutual');
+      for (const r of rooms) {
+        if (r.official || r.autoJoin || !r.members.includes(user.id)) continue;
+        for (const m of r.members) bump(m, 'groups');
+      }
+      const list = [...score.entries()]
+        .sort((a, b) => b[1].mutual * 2 + b[1].groups - (a[1].mutual * 2 + a[1].groups))
+        .slice(0, 8)
+        .map(([id, e]) => ({ ...publicUser(users.get(id)), mutual: e.mutual, groups: e.groups }));
+      ack?.({ ok: true, list });
     });
 
     socket.on('user:block', (p, ack) => {
@@ -1139,8 +1234,7 @@ export function attachChat(httpServer) {
         user.blocked.push(other.id);
       }
       // blocking ends any friendship and clears pending requests in both directions
-      user.friends = user.friends.filter((id) => id !== other.id);
-      other.friends = other.friends.filter((id) => id !== user.id);
+      unmakeFriends(user.id, other.id);
       for (let i = requests.length - 1; i >= 0; i--) {
         const r = requests[i];
         if ((r.from === user.id && r.to === other.id) || (r.from === other.id && r.to === user.id)) requests.splice(i, 1);

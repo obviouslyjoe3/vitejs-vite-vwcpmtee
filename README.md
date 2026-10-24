@@ -16,6 +16,8 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - **Profiles**: pronouns, a short bio and a time zone (Settings > Profile). Click any avatar or name, or anyone in a member list, to open their profile card with local time, status, last seen, member-since and a Message button
 - **Blocking**: block anyone from their profile card. Blocking removes the friendship, cancels pending requests, closes the DM and stops them from messaging you or sending requests (enforced on the server). Their messages in rooms are hidden from you and never alert you, and they are not told. Manage the list in Settings > Privacy & blocking
 - **Privacy**: appear offline (hides online status and last seen) and choose whether anyone can send you friend requests
+- **Friends, v17**: star friends as **favorites** (they sit at the top of your list and the Online now strip), **search, sort and filter** your friends, see **friends since** dates, get **People you may know** suggestions (friends of friends and people from your private groups, one tap to add), **Accept all / Decline all** on requests, and see how long ago a request was sent
+- **Messages, v17**: click **edited** to see earlier versions (last 5); **Remind me** from the ⋯ menu (20 min, 1 hour, 3 hours, tomorrow 9 am, fires as a toast while Parley is open); messages made only of a few emoji show **big**; new slash commands `/pick pizza, tacos, sushi` and `/8ball will it work?` (both decided on the server)
 - **Online now** strip in the sidebar: friends who are online right now, one tap to message them
 - **Toasts** for saves, blocks, connection drops and incoming friend requests, and **confetti** when you send or react with 🎉
 - **Chat backgrounds**: dots, plain, grid, aurora or dusk (Settings > Appearance)
@@ -23,7 +25,7 @@ The chat server runs inside Vite's dev server, so there is nothing else to start
 - **Polls** (single or multiple choice, live votes) and **pinned messages** per conversation
 - **Search** inside a conversation, plus a **quick switcher** (Ctrl/Cmd+K) that jumps to rooms, people or any message
 - Formatting: **bold**, _italic_, ~~strike~~, `code`, code blocks, > quotes, links; toolbar and Ctrl+B / Ctrl+I
-- Slash commands: `/me`, `/shrug`, `/poll`, `/roll` (or `/roll 2d6`), `/flip`. Dice are rolled on the server so results can't be faked
+- Slash commands: `/me`, `/shrug`, `/poll`, `/roll` (or `/roll 2d6`), `/flip`, `/pick`, `/8ball`. Dice are rolled on the server so results can't be faked
 - ||Spoiler text|| stays blurred until clicked; `:fire:` style emoji shortcodes with autocomplete
 - **Saved messages**: bookmark any message from the ⋯ menu and find it again across all conversations
 - **Parley's own emoji**: 52 hand-drawn emoji (faces, hands, hearts, objects) replace the system ones in reactions, the picker, messages, room icons and statuses. Messages are still stored as normal Unicode, and anything not drawn falls back to the system emoji. Artwork lives in `src/emojiArt.js`

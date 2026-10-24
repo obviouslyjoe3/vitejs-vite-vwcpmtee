@@ -20,7 +20,7 @@ const previewOf = (list, meId) => {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
 
 export default function Sidebar({
-  me, rooms, people, friendIds, requestCount, messages, unread, active, status, starred, muted, anyUnread,
+  me, rooms, people, friendIds, favoriteIds = [], requestCount, messages, unread, active, status, starred, muted, anyUnread,
   msgRequestCount = 0, pendingOut = [], onOpenRequests,
   onSelect, onCreateRoom, onLogout, onOpenSettings, onQuick, onMarkAllRead, onOpenFriends, onOpenDiscover,
 }) {
@@ -57,7 +57,9 @@ export default function Sidebar({
     )
     .filter((x) => !onlyUnread || unread[x.id] > 0);
 
-  const onlineFriends = friendUsers.filter((u) => u.online && u.id !== me.id);
+  const onlineFriends = friendUsers
+    .filter((u) => u.online && u.id !== me.id)
+    .sort((a, b) => Number(favoriteIds.includes(b.id)) - Number(favoriteIds.includes(a.id)));
 
   const starredRows = [...roomRows, ...personRows].filter((x) => starred.includes(x.id));
   const rest = (rows) => rows.filter((x) => !starred.includes(x.id));

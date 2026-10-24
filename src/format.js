@@ -13,3 +13,15 @@ export const fmtStamp = (ts) =>
 export const reducedMotion = () =>
   document.documentElement.dataset.motion === 'reduced' ||
   (document.documentElement.dataset.motion !== 'full' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+
+// "just now", "5 min ago", "3 h ago", "2 d ago"
+export const ago = (ts) => {
+  const m = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} h ago`;
+  return `${Math.floor(h / 24)} d ago`;
+};
+
+export const fmtMonth = (ts) => new Date(ts).toLocaleDateString([], { month: 'short', year: 'numeric' });

@@ -53,6 +53,9 @@ const initial = {
   friends: [], // user ids
   incoming: [], // ids of people who asked to be your friend
   outgoing: [], // ids of people you asked
+  favorites: [], // friend ids you starred
+  since: {}, // friend id -> when you became friends
+  reqTs: {}, // user id -> when a pending request was sent
   blocked: [], // [{ id, name, color }] people you blocked
   privacy: { requests: 'everyone', showOnline: true, dms: 'everyone', readReceipts: true },
   dms: [], // message threads: { id, other, incoming, state: 'pending' | 'accepted', left }
@@ -97,7 +100,15 @@ function reducer(s, a) {
       return { ...s, messages, unread, active: s.active === a.id ? s.rooms[0]?.id ?? null : s.active };
     }
     case 'friends':
-      return { ...s, friends: a.friends, incoming: a.incoming, outgoing: a.outgoing };
+      return {
+        ...s,
+        friends: a.friends,
+        incoming: a.incoming,
+        outgoing: a.outgoing,
+        favorites: a.favorites || [],
+        since: a.since || {},
+        reqTs: a.reqTs || {},
+      };
     case 'userUpdate': {
       const exists = s.users.some((u) => u.id === a.user.id);
       return {
@@ -138,6 +149,9 @@ function reducer(s, a) {
         friends: a.friends?.friends || [],
         incoming: a.friends?.incoming || [],
         outgoing: a.friends?.outgoing || [],
+        favorites: a.friends?.favorites || [],
+        since: a.friends?.since || {},
+        reqTs: a.friends?.reqTs || {},
         blocked: a.blocked || [],
         privacy: { ...initial.privacy, ...(a.privacy || {}) },
         dms: a.dms || [],
@@ -476,6 +490,9 @@ export function useParley({ onIncoming, onFriendRequest, onDmRequest, onDmAccept
     friendDecline: (id) => ask('friend:decline', { id }),
     friendCancel: (id) => ask('friend:cancel', { id }),
     friendRemove: (id) => ask('friend:remove', { id }),
+    friendFavorite: (id) => ask('friend:favorite', { id }),
+    friendSuggestions: () => ask('friend:suggestions'),
+    friendRequestById: (id) => ask('friend:request', { id }),
     blockUser: (id) => ask('user:block', { id }),
     unblockUser: (id) => ask('user:unblock', { id }),
     updatePrivacy: (patch) => ask('privacy:update', patch),

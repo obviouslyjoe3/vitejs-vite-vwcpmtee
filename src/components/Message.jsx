@@ -5,7 +5,12 @@ import { PollView } from './Poll.jsx';
 import { renderRich } from '../richText.jsx';
 import { REACTIONS } from '../constants.js';
 import Emoji from '../Emoji.jsx';
-import { fmtClock, reducedMotion } from '../format.js';
+import { fmtClock, fmtStamp, reducedMotion } from '../format.js';
+import { REMIND_CHOICES } from '../reminders.js';
+
+// A message made only of a few emoji is shown big, without a bubble.
+const JUMBO_RE = /^(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}])*\s*){1,5}$/u;
+const isJumbo = (m) => !!m.text && !m.image && !m.poll && !m.action && !m.replyTo && JUMBO_RE.test(m.text.trim());
 
 
 const clock = (ts) => fmtClock(ts);
@@ -22,12 +27,15 @@ export const jumpTo = (id) => {
 export default function Message({
   msg, me, author, grouped, mentionSrc, saved, nameOf, forceEdit,
   onReact, onReply, onEdit, onDelete, onPin, onVote, onSave, onProfile, onOpenImage, onEditStarted, onForward, locked = false,
+  reminderAt = 0, onRemind,
 }) {
   const [picking, setPicking] = useState(false);
   const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [copied, setCopied] = useState(false);
+  const [remindOpen, setRemindOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const toolsRef = useRef(null);
 
   // close popovers on an outside click or Escape
@@ -37,6 +45,7 @@ export default function Message({
       if (e.type === 'keydown' ? e.key === 'Escape' : !toolsRef.current?.contains(e.target)) {
         setPicking(false);
         setMenu(false);
+        setRemindOpen(false);
       }
     };
     document.addEventListener('mousedown', close);
@@ -46,6 +55,21 @@ export default function Message({
       document.removeEventListener('keydown', close);
     };
   }, [picking, menu]);
+
+  // close the "edited" popover on an outside click or Escape
+  const editedRef = useRef(null);
+  useEffect(() => {
+    if (!historyOpen) return;
+    const close = (e) => {
+      if (e.type === 'keydown' ? e.key === 'Escape' : !editedRef.current?.contains(e.target)) setHistoryOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [historyOpen]);
 
   const mine = msg.user.id === me.id;
   const reactions = Object.entries(msg.reactions || {});
@@ -110,6 +134,11 @@ export default function Message({
                 <Icon name="bookmark" size={12} /> Saved
               </span>
             )}
+            {reminderAt > 0 && (
+              <span className="pin-flag saved-flag" title={`Reminder ${fmtStamp(reminderAt)}`}>
+                <Icon name="bell" size={12} /> Reminder
+              </span>
+            )}
             {msg.pinned && (
               <span className="pin-flag" title={msg.pinnedBy ? `Pinned by ${msg.pinnedBy}` : 'Pinned'}>
                 <Icon name="pin" size={12} /> Pinned
@@ -164,7 +193,7 @@ export default function Message({
             <div
               className={`bubble ${msg.pending ? 'pending' : ''} ${msg.failed ? 'failed' : ''} ${
                 msg.image && !msg.text ? 'image-only' : ''
-              } ${msg.action ? 'action' : ''} ${msg.poll ? 'has-poll' : ''}`}
+              } ${msg.action ? 'action' : ''} ${msg.poll ? 'has-poll' : ''} ${isJumbo(msg) ? 'jumbo' : ''}`}
             >
               {msg.image && (
                 <img
@@ -190,7 +219,31 @@ export default function Message({
                   {renderRich(msg.text, mentionSrc, me.name)}
                 </div>
               )}
-              {msg.edited && <span className="edited">edited</span>}
+              {msg.edited && (
+                <span className="edited" ref={editedRef}>
+                  {msg.prev?.length ? (
+                    <button className="edited-btn" onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen} title="See earlier versions">
+                      edited
+                    </button>
+                  ) : (
+                    'edited'
+                  )}
+                  {historyOpen && msg.prev?.length > 0 && (
+                    <div className="edit-history" role="dialog" aria-label="Earlier versions">
+                      <strong>Earlier versions</strong>
+                      <ol>
+                        {[...msg.prev].reverse().map((v, i) => (
+                          <li key={i}>
+                            <time>{fmtStamp(v.ts)}</time>
+                            <p>{v.text || '(no text)'}</p>
+                          </li>
+                        ))}
+                      </ol>
+                      {msg.editedAt && <small>Last edited {fmtStamp(msg.editedAt)}</small>}
+                    </div>
+                  )}
+                </span>
+              )}
             </div>
           )}
 
@@ -254,6 +307,27 @@ export default function Message({
                       <button role="menuitem" onClick={() => { onForward(msg); setMenu(false); }}>
                         <Icon name="forward" size={15} /> Forward…
                       </button>
+                    )}
+                    {onRemind && (
+                      <>
+                        <button role="menuitem" aria-expanded={remindOpen} onClick={() => setRemindOpen((v) => !v)}>
+                          <Icon name="bell" size={15} /> {reminderAt ? `Reminder set · ${fmtStamp(reminderAt)}` : 'Remind me…'}
+                        </button>
+                        {remindOpen && (
+                          <div className="menu-sub">
+                            {REMIND_CHOICES.map(([label, when]) => (
+                              <button key={label} role="menuitem" onClick={() => { onRemind(msg, when()); setMenu(false); setRemindOpen(false); }}>
+                                {label}
+                              </button>
+                            ))}
+                            {reminderAt > 0 && (
+                              <button role="menuitem" className="danger" onClick={() => { onRemind(msg, null); setMenu(false); setRemindOpen(false); }}>
+                                Cancel reminder
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                     {msg.text && (
                       <button role="menuitem" onClick={copy}>

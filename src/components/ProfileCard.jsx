@@ -152,6 +152,7 @@ const WHY = {
 export default function ProfileCard({
   user, me, relation, hasDm, pendingIn, isBlocked, onLoadInfo, onSaveNote, onMessage, onEdit, onClose,
   onOpenPerson, onAddFriend, onAccept, onDecline, onCancel, onRemove, onBlock, onUnblock,
+  isFavorite = false, friendsSince = 0, onFavorite,
 }) {
   const [error, setError] = useState('');
   const [info, setInfo] = useState(null);
@@ -259,7 +260,12 @@ export default function ProfileCard({
             </h2>
             <div className="pc-tags">
               {user.pronouns && <span className="pronoun-tag">{user.pronouns}</span>}
-              {relation === 'friends' && <span className="friend-tag"><Icon name="check" size={12} /> Friends</span>}
+              {relation === 'friends' && (
+                <span className="friend-tag" title={friendsSince ? `Friends since ${new Date(friendsSince).toLocaleDateString([], { dateStyle: 'medium' })}` : undefined}>
+                  <Icon name="check" size={12} /> Friends{friendsSince ? ` since ${new Date(friendsSince).toLocaleDateString([], { month: 'short', year: 'numeric' })}` : ''}
+                </span>
+              )}
+              {relation === 'friends' && isFavorite && <span className="friend-tag fav"><Icon name="star" size={12} /> Favorite</span>}
               {isBlocked && <span className="friend-tag blocked"><Icon name="ban" size={12} /> Blocked</span>}
               <span className="presence-line">
                 {online ? 'Online now' : user.lastSeen ? `Last seen ${ago(user.lastSeen)}` : 'Offline'}
@@ -393,6 +399,11 @@ export default function ProfileCard({
                 </>
               )}
               <span className="actions-end">
+                {relation === 'friends' && onFavorite && (
+                  <button className="text-btn" onClick={() => act(onFavorite)}>
+                    <Icon name="star" size={14} /> {isFavorite ? 'Unfavorite' : 'Favorite'}
+                  </button>
+                )}
                 {relation === 'friends' && (
                   <button
                     className="text-btn danger-text"

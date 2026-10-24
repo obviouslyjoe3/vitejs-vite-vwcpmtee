@@ -16,6 +16,8 @@ import { QUIET_ROOMS, MAX_REQUEST_MSGS } from './constants.js';
 import Toaster from './components/Toaster.jsx';
 import Confetti from './components/Confetti.jsx';
 import { toast, confetti } from './toast.js';
+import { loadReminders, saveReminders } from './reminders.js';
+import { fmtStamp } from './format.js';
 import {
   loadAppearance, saveAppearance, applyAppearance, defaultAppearance, clearDrafts,
   loadConvPrefs, saveConvPrefs, loadDrafts, saveDraft, loadSaved, saveSaved,
@@ -131,6 +133,44 @@ export default function App() {
     setConvPrefs(loadConvPrefs(meId));
     drafts.current = loadDrafts(meId);
     setSaved(loadSaved(meId));
+    setReminders(loadReminders(meId));
+  }, [meId]);
+
+  // Reminders: set from a message's ⋯ menu, fired here while Parley is open
+  const [reminders, setReminders] = useState([]);
+  const remindersRef = useRef(reminders);
+  remindersRef.current = reminders;
+  const remindMap = useMemo(() => Object.fromEntries(reminders.map((r) => [r.id, r.at])), [reminders]);
+  const setReminder = (msg, at) => {
+    if (!meId) return;
+    setReminders((cur) => {
+      const rest = cur.filter((r) => r.id !== msg.id);
+      const next = at
+        ? [...rest, { id: msg.id, room: msg.room, at, who: msg.user?.name || '', text: String(msg.text || (msg.image ? 'Photo' : msg.poll?.question || '')).slice(0, 80) }]
+        : rest;
+      saveReminders(meId, next);
+      return next;
+    });
+    toast(at ? `Okay, I’ll remind you ${fmtStamp(at)}` : 'Reminder cancelled', 'success');
+  };
+  useEffect(() => {
+    if (!meId) return;
+    const check = () => {
+      const now = Date.now();
+      const due = remindersRef.current.filter((r) => r.at <= now);
+      if (!due.length) return;
+      const next = remindersRef.current.filter((r) => r.at > now);
+      saveReminders(meId, next);
+      setReminders(next);
+      for (const r of due) {
+        const body = `${r.who ? r.who + ': ' : ''}${r.text || 'a message'}`;
+        toast(`Reminder · ${body}`);
+        if (document.hidden) showDesktop('Parley reminder', body);
+      }
+    };
+    const t = setInterval(check, 15000);
+    check();
+    return () => clearInterval(t);
   }, [meId]);
 
   const toggleSaved = (msg) => {
@@ -478,6 +518,7 @@ export default function App() {
         rooms={p.rooms}
         people={people}
         friendIds={p.friends}
+        favoriteIds={p.favorites}
         requestCount={p.incoming.length}
         msgRequestCount={requestList.length}
         pendingOut={pendingOut}
@@ -524,6 +565,8 @@ export default function App() {
         muted={muted}
         saved={saved}
         onSave={toggleSaved}
+        reminders={remindMap}
+        onRemind={setReminder}
         onProfile={setProfileUser}
         onAddFriend={addFriend}
         seenAt={p.reads[p.active] || 0}
@@ -587,6 +630,12 @@ export default function App() {
           friends={p.friends}
           incoming={p.incoming}
           outgoing={p.outgoing}
+          favorites={p.favorites}
+          since={p.since}
+          reqTs={p.reqTs}
+          onFavorite={p.friendFavorite}
+          onSuggestions={p.friendSuggestions}
+          onRequestById={p.friendRequestById}
           onRequest={p.friendRequest}
           onAccept={p.friendAccept}
           onDecline={p.friendDecline}
@@ -644,6 +693,9 @@ export default function App() {
             onDecline={(u) => p.friendDecline(u.id)}
             onCancel={(u) => p.friendCancel(u.id)}
             onRemove={(u) => p.friendRemove(u.id)}
+            isFavorite={p.favorites.includes(person.id)}
+            friendsSince={p.since[person.id] || 0}
+            onFavorite={(u) => p.friendFavorite(u.id)}
           />
         );
       })()}
