@@ -21,7 +21,7 @@ export const jumpTo = (id) => {
 
 export default function Message({
   msg, me, author, grouped, mentionSrc, saved, nameOf, forceEdit,
-  onReact, onReply, onEdit, onDelete, onPin, onVote, onSave, onProfile, onOpenImage, onEditStarted,
+  onReact, onReply, onEdit, onDelete, onPin, onVote, onSave, onProfile, onOpenImage, onEditStarted, onForward, locked = false,
 }) {
   const [picking, setPicking] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -49,7 +49,7 @@ export default function Message({
 
   const mine = msg.user.id === me.id;
   const reactions = Object.entries(msg.reactions || {});
-  const canAct = !msg.pending && !msg.failed && !msg.deleted;
+  const canAct = !msg.pending && !msg.failed && !msg.deleted && !locked;
 
   const startEdit = () => {
     setDraft(msg.text || '');
@@ -116,6 +116,10 @@ export default function Message({
               </span>
             )}
           </div>
+        )}
+
+        {msg.forwarded && !msg.deleted && (
+          <p className="fwd-label"><Icon name="forward" size={12} /> Forwarded from <strong>{msg.forwarded.name}</strong></p>
         )}
 
         {quote && (
@@ -246,6 +250,11 @@ export default function Message({
                     <button role="menuitem" onClick={() => { onSave(msg); setMenu(false); }}>
                       <Icon name="bookmark" size={15} /> {saved ? 'Remove from saved' : 'Save for later'}
                     </button>
+                    {onForward && !msg.poll && (msg.text || msg.image) && (
+                      <button role="menuitem" onClick={() => { onForward(msg); setMenu(false); }}>
+                        <Icon name="forward" size={15} /> Forward…
+                      </button>
+                    )}
                     {msg.text && (
                       <button role="menuitem" onClick={copy}>
                         <Icon name="copy" size={15} /> Copy text

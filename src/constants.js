@@ -51,3 +51,32 @@ export const GROUP_ICONS = ['', '💬', '💡', '🎮', '🎵', '📚', '🍕', 
 
 // The shared public room is silent: no unread badge, sounds or desktop alerts (an @mention still gets through).
 export const QUIET_ROOMS = ['lobby', 'global'];
+
+// Profile banners (id -> CSS gradient). Keep the ids in sync with BANNERS in server/chatServer.js
+export const BANNERS = [
+  ['violet', 'Violet', 'linear-gradient(135deg, #5b3fd9, #a06bff)'],
+  ['sunset', 'Sunset', 'linear-gradient(135deg, #ff7a59, #c2347a)'],
+  ['ocean', 'Ocean', 'linear-gradient(135deg, #1f6fd0, #28c2c9)'],
+  ['forest', 'Forest', 'linear-gradient(135deg, #0f8f73, #9bcf4a)'],
+  ['candy', 'Candy', 'linear-gradient(135deg, #ff8fb1, #8f7bff)'],
+  ['slate', 'Slate', 'linear-gradient(135deg, #3b4252, #7b8798)'],
+  ['aurora', 'Aurora', 'linear-gradient(135deg, #0f8f73, #5b3fd9 55%, #c2347a)'],
+  ['dusk', 'Dusk', 'linear-gradient(135deg, #17133a, #5b3fd9 60%, #f2b134)'],
+];
+export const bannerCss = (user) => {
+  const hit = BANNERS.find(([id]) => id === user?.banner);
+  if (hit) return hit[2];
+  // no banner chosen: a soft gradient from the person's own color
+  const c = user?.color || '#5B3FD9';
+  return `linear-gradient(135deg, ${c}, color-mix(in srgb, ${c} 45%, #ffffff))`;
+};
+
+export const INTEREST_IDEAS = ['Gaming', 'Music', 'Reading', 'Cooking', 'Hiking', 'Coding', 'Film', 'Art', 'Travel', 'Fitness'];
+
+// Who may start a conversation with you (keep in sync with DM_POLICIES on the server)
+export const DM_POLICIES = [
+  ['everyone', 'Everyone', 'Anyone can send you a message request. Friends message you directly.'],
+  ['shared', 'Friends and people you know', 'Friends, friends of friends, and people who share a group with you. Everyone else is blocked from asking.'],
+  ['friends', 'Friends only', 'Only friends can message you. Nobody else can start a conversation.'],
+];
+export const MAX_REQUEST_MSGS = 3;

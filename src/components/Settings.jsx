@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { COLORS, ACCENTS, STATUS_PRESETS } from '../constants.js';
+import { COLORS, ACCENTS, STATUS_PRESETS, BANNERS, bannerCss, INTEREST_IDEAS, DM_POLICIES } from '../constants.js';
+import { Banner, localTime } from './ProfileCard.jsx';
 import { beep } from '../notify.js';
 import Avatar from './Avatar.jsx';
 import Icon from './Icon.jsx';
@@ -111,21 +112,119 @@ const zones = () => {
 
 /* ---------- sections ---------- */
 
+function InterestsEditor({ value, onChange }) {
+  const [text, setText] = useState('');
+  const full = value.length >= 6;
+  const add = (raw) => {
+    const t = raw.replace(/\s+/g, ' ').trim().slice(0, 20);
+    if (!t || full || value.some((v) => v.toLowerCase() === t.toLowerCase())) return setText('');
+    onChange([...value, t]);
+    setText('');
+  };
+  const ideas = INTEREST_IDEAS.filter((i) => !value.some((v) => v.toLowerCase() === i.toLowerCase())).slice(0, 6);
+  return (
+    <div className="interests-editor">
+      <div className="interest-row" aria-live="polite">
+        {value.map((t) => (
+          <span key={t} className="interest removable">
+            {t}
+            <button type="button" onClick={() => onChange(value.filter((v) => v !== t))} aria-label={`Remove ${t}`}>
+              <Icon name="close" size={11} />
+            </button>
+          </span>
+        ))}
+        {value.length === 0 && <span className="hint">Up to 6 things you like. They show on your profile.</span>}
+      </div>
+      <div className="status-form">
+        <input
+          className="field"
+          value={text}
+          maxLength={20}
+          disabled={full}
+          placeholder={full ? 'You have 6 interests' : 'Type one and press Enter'}
+          aria-label="Add an interest"
+          onChange={(e) => setText(e.target.value.replace(',', ''))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              add(text);
+            }
+          }}
+        />
+        <button type="button" className="chip" disabled={!text.trim() || full} onClick={() => add(text)}>Add</button>
+      </div>
+      {!full && (
+        <div className="chips">
+          {ideas.map((i) => (
+            <button key={i} type="button" className="chip ghost" onClick={() => add(i)}>+ {i}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// What other people will see, updated as you type
+function ProfilePreview({ me, draft }) {
+  const user = { ...me, ...draft };
+  const time = localTime(user.tz);
+  return (
+    <div className="pc-preview" aria-label="Profile preview">
+      <Banner user={user} />
+      <div className="pcp-head">
+        <Avatar user={user} size={64} online />
+        <div>
+          <strong>{me.name}</strong>
+          {user.pronouns && <span className="pronoun-tag">{user.pronouns}</span>}
+          <p>{me.status ? <><Emoji char={me.status.emoji} /> {me.status.text}</> : 'No status set'}</p>
+        </div>
+      </div>
+      {user.bio && <p className="bio-full">{user.bio}</p>}
+      {user.interests?.length > 0 && (
+        <p className="interest-row">
+          {user.interests.map((t) => <span key={t} className="interest">{t}</span>)}
+        </p>
+      )}
+      <ul className="pc-facts">
+        {user.location && <li><Icon name="mapPin" size={14} /> <span>{user.location}</span></li>}
+        {time && <li><Icon name="clock" size={14} /> <span>{time} local time</span></li>}
+        {user.website && <li><Icon name="link" size={14} /> <span>{user.website.replace(/^https?:\/\//i, '')}</span></li>}
+      </ul>
+    </div>
+  );
+}
+
 function ProfileSection({ me, onColor, onStatus, onProfile }) {
   const [emoji, setEmoji] = useState(me.status?.emoji || '');
   const [text, setText] = useState(me.status?.text || '');
   const [bio, setBio] = useState(me.bio || '');
   const [pronouns, setPronouns] = useState(me.pronouns || '');
   const [tz, setTz] = useState(me.tz || '');
-  const [saved, setSaved] = useState(false);
+  const [location, setLocation] = useState(me.location || '');
+  const [website, setWebsite] = useState(me.website || '');
+  const [interests, setInterests] = useState(me.interests || []);
+  const [saved, setSaved] = useState('');
   const zoneList = zones();
-  const dirty = bio.trim() !== (me.bio || '') || pronouns.trim() !== (me.pronouns || '') || tz !== (me.tz || '');
+  const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const dirty =
+    bio.trim() !== (me.bio || '') ||
+    pronouns.trim() !== (me.pronouns || '') ||
+    tz !== (me.tz || '') ||
+    location.trim() !== (me.location || '') ||
+    website.trim() !== (me.website || '') ||
+    !sameList(interests, me.interests || []);
+  const badSite = website.trim() && !/^(https?:\/\/)?[^\s/]+\.[^\s/]+/i.test(website.trim());
 
-  const saveProfile = (e) => {
+  const saveProfile = async (e) => {
     e.preventDefault();
-    onProfile({ bio: bio.trim(), pronouns: pronouns.trim(), tz });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+    if (badSite) return setSaved('That doesn’t look like a web address.');
+    const res = await onProfile({ bio: bio.trim(), pronouns: pronouns.trim(), tz, location: location.trim(), website: website.trim(), interests });
+    if (res?.user) {
+      setWebsite(res.user.website || '');
+      setInterests(res.user.interests || []);
+    }
+    setSaved(res?.error || 'Saved');
+    setTimeout(() => setSaved(''), 1800);
   };
   const saveStatus = (e) => {
     e.preventDefault();
@@ -139,14 +238,23 @@ function ProfileSection({ me, onColor, onStatus, onProfile }) {
 
   return (
     <>
-      <div className="me-hero">
-        <Avatar user={me} size={64} />
-        <div>
-          <strong>{me.name}</strong>
-          {pronouns && <span className="pronoun-tag">{pronouns}</span>}
-          <p>{me.status ? <><Emoji char={me.status.emoji} /> {me.status.text}</> : 'No status set'}</p>
+      <ProfilePreview me={me} draft={{ bio: bio.trim(), pronouns: pronouns.trim(), tz, location: location.trim(), website: website.trim(), interests }} />
+
+      <Card title="Banner">
+        <div className="banner-picker" role="radiogroup" aria-label="Profile banner">
+          {BANNERS.map(([id, name, css]) => {
+            const on = (me.banner || '') === id;
+            return (
+              <button key={id} type="button" role="radio" aria-checked={on} className={on ? 'banner-swatch on' : 'banner-swatch'} style={{ background: css }} title={name} onClick={() => onProfile({ banner: id })}>
+                <span>{name}</span>
+              </button>
+            );
+          })}
+          <button type="button" role="radio" aria-checked={!me.banner} className={!me.banner ? 'banner-swatch on auto' : 'banner-swatch auto'} style={{ background: bannerCss({ color: me.color }) }} title="Match my color" onClick={() => onProfile({ banner: '' })}>
+            <span>My color</span>
+          </button>
         </div>
-      </div>
+      </Card>
 
       <Card title="Your color">
         <div className="swatches">
@@ -178,8 +286,14 @@ function ProfileSection({ me, onColor, onStatus, onProfile }) {
           <label className="field-label" htmlFor="pronouns">Pronouns</label>
           <input id="pronouns" className="field" value={pronouns} maxLength={20} onChange={(e) => setPronouns(e.target.value)} placeholder="e.g. she/her, he/him, they/them" />
           <label className="field-label" htmlFor="bio">Bio</label>
-          <textarea id="bio" className="field" rows={3} value={bio} maxLength={160} onChange={(e) => setBio(e.target.value)} placeholder="A line or two about you" />
-          <p className="hint count-hint">{bio.length}/160</p>
+          <textarea id="bio" className="field" rows={4} value={bio} maxLength={300} onChange={(e) => setBio(e.target.value)} placeholder="A few lines about you. Line breaks are kept." />
+          <p className="hint count-hint">{bio.length}/300</p>
+          <label className="field-label" htmlFor="location">Location</label>
+          <input id="location" className="field" value={location} maxLength={40} onChange={(e) => setLocation(e.target.value)} placeholder="City, country, or just “the internet”" />
+          <label className="field-label" htmlFor="website">Website</label>
+          <input id="website" className="field" value={website} maxLength={120} inputMode="url" autoCapitalize="none" spellCheck={false} onChange={(e) => setWebsite(e.target.value)} placeholder="example.com" aria-invalid={!!badSite} />
+          <label className="field-label">Interests</label>
+          <InterestsEditor value={interests} onChange={setInterests} />
           <label className="field-label" htmlFor="tz">Time zone</label>
           {zoneList.length > 0 ? (
             <select id="tz" className="field" value={tz} onChange={(e) => setTz(e.target.value)}>
@@ -194,10 +308,16 @@ function ProfileSection({ me, onColor, onStatus, onProfile }) {
           )}
           <div className="inline-actions">
             <button className="primary" type="submit" disabled={!dirty}>Save profile</button>
+            {dirty && (
+              <button className="chip ghost" type="button" onClick={() => {
+                setBio(me.bio || ''); setPronouns(me.pronouns || ''); setTz(me.tz || '');
+                setLocation(me.location || ''); setWebsite(me.website || ''); setInterests(me.interests || []);
+              }}>Discard changes</button>
+            )}
             {browserTz() && tz !== browserTz() && (
               <button className="chip" type="button" onClick={() => setTz(browserTz())}>Use {browserTz().replace(/_/g, ' ')}</button>
             )}
-            {saved && <span className="saved" role="status">Saved</span>}
+            {saved && <span className={saved === 'Saved' ? 'saved' : 'form-error inline'} role="status">{saved}</span>}
           </div>
         </form>
       </Card>
@@ -231,7 +351,7 @@ function AccountSection({ me, onChangePassword, onLogout }) {
   return (
     <>
       <Card title="Signed in">
-        <Row title={me.name} desc="Your username. Sign-ins last 30 days and are shared by every tab in this browser.">
+        <Row title={me.name} desc="Your username. Sign-ins last 90 days from your last visit and are shared by every tab in this browser.">
           <button className="chip" type="button" onClick={onLogout}>Log out</button>
         </Row>
       </Card>
@@ -439,6 +559,9 @@ function MessagingSection({ prefs, onPrefs }) {
         <Toggle title="Convert :shortcodes: to emoji" desc="Typing :fire: sends 🔥. Turn off to send the text as typed." checked={prefs.shortcodes} onChange={(shortcodes) => set({ shortcodes })} />
         <Toggle title="Check spelling" desc="Uses your browser’s spell checker in the message box." checked={prefs.spellcheck} onChange={(spellcheck) => set({ spellcheck })} />
       </Card>
+      <Card title="Message requests">
+        <Toggle title="Alert me about new requests" desc="A toast, plus a sound or desktop notification if those are on. Requests never count as unread messages." checked={prefs.reqAlerts !== false} onChange={(reqAlerts) => set({ reqAlerts })} />
+      </Card>
       <Card title="Privacy">
         <Toggle title="Share typing status" desc="Let others see “is typing…” while you write. You will still see theirs." checked={prefs.typing} onChange={(typing) => set({ typing })} />
       </Card>
@@ -499,9 +622,29 @@ function PrivacySection({ privacy, onPrivacy, blocked, onUnblock }) {
   };
   return (
     <>
+      <Card title="Who can message you">
+        <div className="choices" role="radiogroup" aria-label="Who can message you">
+          {DM_POLICIES.map(([v, name, desc]) => (
+            <button key={v} type="button" role="radio" aria-checked={privacy.dms === v} className={privacy.dms === v ? 'choice on' : 'choice'} onClick={() => onPrivacy({ dms: v })}>
+              <span className="radio-dot" />
+              <span>
+                <strong>{name}</strong>
+                <small>{desc}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="hint">
+          Anyone who isn’t your friend lands in <strong>Message requests</strong> first: text only, three messages at most,
+          and no alerts until you accept. Deleting a request doesn’t tell them.
+        </p>
+      </Card>
       <Card title="Visibility">
         <Row title="Appear offline" desc="Hide your online status and last-seen time from everyone. You still get messages as usual.">
           <Switch label="Appear offline" checked={!privacy.showOnline} onChange={(v) => onPrivacy({ showOnline: !v })} />
+        </Row>
+        <Row title="Read receipts" desc="Show “Seen” in direct messages. It works both ways: if you turn it off, you won’t see theirs either.">
+          <Switch label="Read receipts" checked={privacy.readReceipts !== false} onChange={(v) => onPrivacy({ readReceipts: v })} />
         </Row>
         <Row title="Friend requests" desc="Who can send you new friend requests. Anyone who already asked you can still be accepted." stack>
           <Segmented
@@ -567,7 +710,7 @@ function DataSection({ savedCount, onClearDrafts, onClearSaved, onReset }) {
 /* ---------- dialog ---------- */
 
 export default function Settings({
-  me, appearance, prefs, savedCount = 0, blocked = [], privacy = { requests: 'everyone', showOnline: true }, initialSection = 'profile', onPrivacy, onUnblock,
+  me, appearance, prefs, savedCount = 0, blocked = [], privacy = { requests: 'everyone', showOnline: true, dms: 'everyone', readReceipts: true }, initialSection = 'profile', onPrivacy, onUnblock,
   onAppearance, onColor, onStatus, onProfile, onPrefs, onChangePassword, onLogout,
   onClearDrafts, onClearSaved, onReset, onClose,
 }) {

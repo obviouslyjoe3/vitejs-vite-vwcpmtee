@@ -54,7 +54,9 @@ const initial = {
   incoming: [], // ids of people who asked to be your friend
   outgoing: [], // ids of people you asked
   blocked: [], // [{ id, name, color }] people you blocked
-  privacy: { requests: 'everyone', showOnline: true },
+  privacy: { requests: 'everyone', showOnline: true, dms: 'everyone', readReceipts: true },
+  dms: [], // message threads: { id, other, incoming, state: 'pending' | 'accepted', left }
+  reads: {}, // dm id -> when the other person last read it (only while read receipts are on)
   messages: {}, // conversationId -> message[]
   unread: {},
   lastRead: {}, // conversationId -> ts of newest message seen
@@ -82,6 +84,18 @@ function reducer(s, a) {
       return { ...s, blocked: a.list };
     case 'privacy':
       return { ...s, privacy: a.privacy };
+    case 'dms':
+      return { ...s, dms: a.list };
+    case 'reads':
+      return { ...s, reads: a.reads };
+    case 'readUpdate':
+      return { ...s, reads: { ...s.reads, [a.room]: a.ts } };
+    case 'dmRemove': {
+      // a request you deleted: it leaves your lists completely
+      const { [a.id]: _m, ...messages } = s.messages;
+      const { [a.id]: _u, ...unread } = s.unread;
+      return { ...s, messages, unread, active: s.active === a.id ? s.rooms[0]?.id ?? null : s.active };
+    }
     case 'friends':
       return { ...s, friends: a.friends, incoming: a.incoming, outgoing: a.outgoing };
     case 'userUpdate': {
@@ -125,7 +139,9 @@ function reducer(s, a) {
         incoming: a.friends?.incoming || [],
         outgoing: a.friends?.outgoing || [],
         blocked: a.blocked || [],
-        privacy: a.privacy || initial.privacy,
+        privacy: { ...initial.privacy, ...(a.privacy || {}) },
+        dms: a.dms || [],
+        reads: a.reads || {},
         messages: a.history,
         active,
         unread,
@@ -245,13 +261,17 @@ function reducer(s, a) {
 const ask = (event, payload) =>
   new Promise((resolve) => socket.emit(event, payload, (res) => resolve(res || {})));
 
-export function useParley({ onIncoming, onFriendRequest } = {}) {
+export function useParley({ onIncoming, onFriendRequest, onDmRequest, onDmAccepted } = {}) {
   const [state, dispatch] = useReducer(reducer, initial);
   const tokenRef = useRef(readToken());
   const incomingRef = useRef(onIncoming);
   incomingRef.current = onIncoming;
   const friendRef = useRef(onFriendRequest);
   friendRef.current = onFriendRequest;
+  const requestRef = useRef(onDmRequest);
+  requestRef.current = onDmRequest;
+  const acceptedRef = useRef(onDmAccepted);
+  acceptedRef.current = onDmAccepted;
 
   // Everything the server sends when you sign in, register or resume
   const start = useCallback((res) => {
@@ -268,6 +288,8 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
       friends: res.friends,
       blocked: res.blocked,
       privacy: res.privacy,
+      dms: res.dms,
+      reads: res.reads,
       readMap: loadReadMap(res.user.id),
       preferred: readActive(),
     });
@@ -309,6 +331,12 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
     socket.on('blocked', (list) => dispatch({ type: 'blocked', list }));
     socket.on('privacy', (privacy) => dispatch({ type: 'privacy', privacy }));
     socket.on('friend:incoming', (info) => friendRef.current?.(info));
+    socket.on('dms', (list) => dispatch({ type: 'dms', list }));
+    socket.on('reads', (reads) => dispatch({ type: 'reads', reads }));
+    socket.on('read:update', ({ room, ts }) => dispatch({ type: 'readUpdate', room, ts }));
+    socket.on('dm:request', (info) => requestRef.current?.(info));
+    socket.on('dm:accepted', (info) => acceptedRef.current?.(info));
+    socket.on('dm:remove', ({ id }) => dispatch({ type: 'dmRemove', id }));
     socket.on('history', (history) => dispatch({ type: 'history', history }));
     socket.on('room:new', (room) => dispatch({ type: 'roomNew', room }));
     socket.on('room:update', (room) => dispatch({ type: 'roomUpdate', room }));
@@ -348,7 +376,7 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
   }, [state.me, state.lastRead]);
 
   const send = useCallback(
-    (room, { text, image, replyTo, poll }) => {
+    (room, { text, image, replyTo, poll, forward }) => {
       const cid = uid();
       const snapshot = replyTo
         ? {
@@ -363,10 +391,12 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
         type: 'pending',
         msg: {
           id: cid, cid, room, text, image: image || null, poll: poll ? { ...poll, options: poll.options.map((t, i) => ({ id: String(i), text: t, votes: [] })) } : null, replyTo: snapshot,
+          forwarded: forward ? { name: forward.user.name } : null,
           user: me, ts: Date.now(), reactions: {}, edited: false, deleted: false, pending: true,
         },
       });
-      socket.emit('message:send', { room, text, image, poll, cid, replyTo: replyTo?.id }, (res) => {
+      const fwd = forward ? { room: forward.room, id: forward.id } : undefined;
+      socket.emit('message:send', { room, text, image, poll, cid, replyTo: replyTo?.id, forward: fwd }, (res) => {
         if (res?.error) dispatch({ type: 'failed', room, cid, error: res.error });
       });
     },
@@ -426,7 +456,12 @@ export function useParley({ onIncoming, onFriendRequest } = {}) {
     pin: (room, id) => socket.emit('message:pin', { room, id }),
     vote: (room, id, option) => socket.emit('poll:vote', { room, id, option }),
     setTopic: (id, topic) => ask('room:topic', { id, topic }),
-    updateProfile: (patch) => socket.emit('profile:update', patch),
+    updateProfile: (patch) => ask('profile:update', patch),
+    profileInfo: (id) => ask('profile:get', { id }),
+    saveNote: (id, text) => ask('profile:note', { id, text }),
+    acceptRequest: (id) => ask('dm:accept', { id }),
+    declineRequest: (id) => ask('dm:decline', { id }),
+    sendRead: (room) => socket.emit('read', { room }),
     editRoom: (id, patch) => ask('room:edit', { id, ...patch }),
     deleteRoom: (id) => ask('room:delete', { id }),
     inviteToRoom: (id, ids) => ask('room:invite', { id, ids }),

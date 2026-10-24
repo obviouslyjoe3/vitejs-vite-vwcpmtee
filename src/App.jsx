@@ -9,8 +9,10 @@ import QuickSwitcher from './components/QuickSwitcher.jsx';
 import ProfileCard from './components/ProfileCard.jsx';
 import Friends from './components/Friends.jsx';
 import Discover from './components/Discover.jsx';
+import MessageRequests from './components/MessageRequests.jsx';
+import ForwardDialog from './components/ForwardDialog.jsx';
 import Logo from './components/Logo.jsx';
-import { QUIET_ROOMS } from './constants.js';
+import { QUIET_ROOMS, MAX_REQUEST_MSGS } from './constants.js';
 import Toaster from './components/Toaster.jsx';
 import Confetti from './components/Confetti.jsx';
 import { toast, confetti } from './toast.js';
@@ -40,6 +42,9 @@ export default function App() {
   const [profileUser, setProfileUser] = useState(null);
   const [friendsTab, setFriendsTab] = useState(null); // null | 'friends' | 'requests' | 'add'
   const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
+  const [forwardMsg, setForwardMsg] = useState(null);
+  const [access, setAccess] = useState({}); // other person's id -> how you may message them (from the server)
   const [jump, setJump] = useState(null); // { conv, id }
   const [convPrefs, setConvPrefs] = useState({ starred: [], muted: [] });
   const [saved, setSaved] = useState([]);
@@ -55,6 +60,7 @@ export default function App() {
     const mentioned =
       !!msg.text && msg.text.toLowerCase().includes('@' + me.name.toLowerCase());
     if (live.current.blockedIds?.includes(msg.user.id)) return; // blocked people never alert you
+    if (live.current.requestRooms?.includes(msg.room)) return; // message requests have their own, quieter alert
     if (QUIET_ROOMS.includes(msg.room) && !mentioned) return; // the global room never alerts
     if (live.current.muted?.includes(msg.room) && !mentioned) return; // muted: only @mentions get through
     if (pf.scope === 'mentions' && !mentioned) return;
@@ -80,9 +86,24 @@ export default function App() {
     if (pf.desktop && document.hidden) showDesktop(from.name, 'Sent you a friend request');
   }, []);
 
-  const p = useParley({ onIncoming, onFriendRequest });
+  const onDmRequest = useCallback((from) => {
+    const { prefs: pf } = live.current;
+    toast(`${from.from.name} sent you a message request`);
+    if (pf.reqAlerts === false || alertsSilenced(pf)) return;
+    if (pf.sound) beep(pf.volume);
+    if (pf.desktop && document.hidden) showDesktop(from.from.name, pf.preview ? from.text : 'Sent you a message request');
+  }, []);
+  const onDmAccepted = useCallback((info) => {
+    toast(`${info.by.name} accepted your message request`, 'success');
+  }, []);
+
+  const p = useParley({ onIncoming, onFriendRequest, onDmRequest, onDmAccepted });
   const blockedIds = useMemo(() => p.blocked.map((b) => b.id), [p.blocked]);
-  live.current = { ...live.current, me: p.me, active: p.active, prefs, muted: convPrefs.muted, blockedIds };
+  // message requests: threads from people who are not your friends yet
+  const incomingThreads = useMemo(() => p.dms.filter((t) => t.incoming && t.state === 'pending'), [p.dms]);
+  const requestRooms = useMemo(() => incomingThreads.map((t) => t.id), [incomingThreads]);
+  const pendingOut = useMemo(() => p.dms.filter((t) => !t.incoming && t.state === 'pending').map((t) => t.id), [p.dms]);
+  live.current = { ...live.current, me: p.me, active: p.active, prefs, muted: convPrefs.muted, blockedIds, requestRooms };
 
   // Room messages from people you blocked are hidden everywhere (DMs with them stay readable)
   const shownMessages = useMemo(() => {
@@ -143,7 +164,7 @@ export default function App() {
 
   // unread count in the tab title (muted conversations stay out of it)
   const totalUnread = Object.entries(p.unread).reduce(
-    (a, [id, n]) => (convPrefs.muted.includes(id) ? a : a + n),
+    (a, [id, n]) => (convPrefs.muted.includes(id) || requestRooms.includes(id) ? a : a + n),
     0
   );
   useEffect(() => {
@@ -165,7 +186,7 @@ export default function App() {
   // Alt+Up / Alt+Down switch conversation; Esc closes an open side panel
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape' && panel && !settingsOpen && !quickOpen && !profileUser && !friendsTab && !discoverOpen) {
+      if (e.key === 'Escape' && panel && !settingsOpen && !quickOpen && !profileUser && !friendsTab && !discoverOpen && !requestsOpen && !forwardMsg) {
         setPanel(null);
         return;
       }
@@ -216,11 +237,33 @@ export default function App() {
     if (!p.me) return [];
     const ids = new Set(p.friends);
     for (const key of Object.keys(p.messages)) {
-      if (!key.startsWith('dm:')) continue;
+      if (!key.startsWith('dm:') || requestRooms.includes(key)) continue; // requests wait in their own inbox
       for (const id of key.slice(3).split('|')) if (id !== p.me.id) ids.add(id);
     }
     return p.users.filter((u) => ids.has(u.id) && !blockedIds.includes(u.id));
-  }, [p.me, p.friends, p.messages, p.users, blockedIds]);
+  }, [p.me, p.friends, p.messages, p.users, blockedIds, requestRooms]);
+
+  const requestList = useMemo(
+    () =>
+      incomingThreads
+        .map((t) => {
+          const user = p.users.find((u) => u.id === t.other);
+          if (!user || blockedIds.includes(user.id)) return null;
+          const messages = (p.messages[t.id] || []).filter((m) => m.user.id === user.id && !m.deleted && !m.system).slice(-3);
+          return { id: t.id, user, thread: t, messages, last: messages[messages.length - 1] };
+        })
+        .filter(Boolean)
+        .sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0)),
+    [incomingThreads, p.users, p.messages, blockedIds]
+  );
+  const outgoingList = useMemo(
+    () =>
+      p.dms
+        .filter((t) => !t.incoming && t.state === 'pending')
+        .map((t) => ({ id: t.id, left: t.left, user: p.users.find((u) => u.id === t.other) }))
+        .filter((o) => o.user && !blockedIds.includes(o.user.id)),
+    [p.dms, p.users, blockedIds]
+  );
 
   live.current.order = p.me
     ? [...p.rooms.map((r) => r.id), ...people.filter((u) => u.id !== p.me.id).map((u) => dmId(p.me.id, u.id))]
@@ -257,9 +300,48 @@ export default function App() {
     p.react(p.active, id, emoji);
   };
 
+  const addFriend = async (u) => {
+    const res = await p.friendRequest(u.name);
+    toast(res?.error || (res.accepted ? `You and ${u.name} are now friends` : `Friend request sent to ${u.name}`), res?.error ? 'error' : 'success');
+    return res;
+  };
+  const acceptRequest = async (otherId) => {
+    const res = await p.acceptRequest(otherId);
+    if (res?.error) toast(res.error, 'error');
+    return res;
+  };
+  const declineRequest = async (otherId) => {
+    const res = await p.declineRequest(otherId);
+    toast(res?.error || 'Request deleted. They weren’t told.', res?.error ? 'error' : 'success');
+    return res;
+  };
+  const forwardTo = (roomId, label) => {
+    const m = forwardMsg;
+    setForwardMsg(null);
+    if (!m) return;
+    p.send(roomId, { text: m.text || '', image: m.image || null, forward: m });
+    toast(`Forwarded to ${roomId.startsWith('dm:') ? label : '#' + label}`, 'success');
+  };
+
   const relationOf = (id) =>
     friendSet.has(id) ? 'friends' : p.incoming.includes(id) ? 'incoming' : p.outgoing.includes(id) ? 'outgoing' : 'none';
   const friendUsers = useMemo(() => p.users.filter((u) => friendSet.has(u.id)), [p.users, friendSet]);
+
+  const activeOther = p.me && p.active?.startsWith('dm:') ? p.active.slice(3).split('|').find((x) => x !== p.me.id) : null;
+  const activeThread = p.dms.find((t) => t.id === p.active) || null;
+
+  // When there is no thread yet, ask the server how you may message this person (friends-only, request, ...)
+  const needsAccess = !!activeOther && !friendSet.has(activeOther) && !activeThread;
+  useEffect(() => {
+    if (!needsAccess) return undefined;
+    let live = true;
+    p.profileInfo(activeOther).then((res) => {
+      if (live && res.dm) setAccess((a) => ({ ...a, [activeOther]: res.dm }));
+    });
+    return () => {
+      live = false;
+    };
+  }, [needsAccess, activeOther]);
 
   const conv = useMemo(() => {
     if (!p.me || !p.active) return null;
@@ -267,18 +349,48 @@ export default function App() {
       const otherId = p.active.slice(3).split('|').find((x) => x !== p.me.id);
       const user = p.users.find((u) => u.id === otherId);
       if (!user) return null;
+      const isBlocked = blockedIds.includes(user.id);
+      const asked = access[user.id];
+      let dmMode = 'open';
+      let left = MAX_REQUEST_MSGS;
+      let reasonText = '';
+      if (isBlocked) dmMode = 'blocked';
+      else if (friendSet.has(user.id) || activeThread?.state === 'accepted') dmMode = 'open';
+      else if (activeThread?.incoming) dmMode = 'incoming';
+      else if (activeThread) {
+        left = activeThread.left;
+        dmMode = left > 0 ? 'request-sent' : 'waiting';
+      } else if (asked?.mode === 'open') dmMode = 'open';
+      else if (asked?.mode === 'waiting') dmMode = 'waiting';
+      else if (asked?.mode === 'no') {
+        dmMode = 'closed';
+        reasonText =
+          asked.reason === 'friends'
+            ? `${user.name} only takes messages from friends.`
+            : asked.reason === 'shared'
+            ? `${user.name} only takes messages from friends and people they share a group with.`
+            : '';
+      } else dmMode = 'request-new';
       return {
         id: p.active,
         kind: 'dm',
         title: user.name,
-        subtitle: user.online
-          ? 'Online now'
-          : user.lastSeen
-          ? `Last seen ${ago(user.lastSeen)}`
-          : 'Offline',
+        subtitle:
+          dmMode === 'incoming'
+            ? 'Message request'
+            : dmMode === 'request-sent' || dmMode === 'waiting'
+            ? 'Message request sent'
+            : user.online
+            ? 'Online now'
+            : user.lastSeen
+            ? `Last seen ${ago(user.lastSeen)}`
+            : 'Offline',
         user,
-        closed: !friendSet.has(user.id),
-        blocked: blockedIds.includes(user.id),
+        dmMode,
+        left,
+        reasonText,
+        canFriend: relationOf(user.id) === 'none',
+        blocked: isBlocked,
       };
     }
     const room = p.rooms.find((r) => r.id === p.active);
@@ -288,7 +400,36 @@ export default function App() {
       ? `Private group · ${n} ${n === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`
       : `${n} ${n === 1 ? 'member' : 'members'}${room.topic ? ' · ' + room.topic : ''}`;
     return { id: room.id, kind: 'room', title: room.name, subtitle, topic: room.topic, room };
-  }, [p.me, p.active, p.users, p.rooms, friendSet, blockedIds]);
+  }, [p.me, p.active, p.users, p.rooms, friendSet, blockedIds, activeThread, access, p.friends, p.incoming, p.outgoing]);
+
+  // Tell the other person you have read a direct message (they see "Seen", if both of you allow it)
+  const readsOn = conv?.kind === 'dm' && conv.dmMode === 'open';
+  const newestFromThem = readsOn
+    ? Math.max(0, ...(p.messages[p.active] || []).filter((m) => m.user.id !== p.me.id).map((m) => m.ts || 0))
+    : 0;
+  useEffect(() => {
+    if (!readsOn) return undefined;
+    const send = () => {
+      if (document.hasFocus() && !document.hidden) p.sendRead(p.active);
+    };
+    const t = setTimeout(send, 450);
+    window.addEventListener('focus', send);
+    document.addEventListener('visibilitychange', send);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('focus', send);
+      document.removeEventListener('visibilitychange', send);
+    };
+  }, [readsOn, p.active, newestFromThem]);
+
+  // people a message can be forwarded to (rooms are listed separately)
+  const forwardPeople = useMemo(() => {
+    if (!p.me) return [];
+    const accepted = new Set(p.dms.filter((t) => t.state === 'accepted').map((t) => t.other));
+    return p.users
+      .filter((u) => u.id !== p.me.id && !blockedIds.includes(u.id) && (friendSet.has(u.id) || accepted.has(u.id)))
+      .map((u) => ({ user: u, dmId: dmId(p.me.id, u.id) }));
+  }, [p.me, p.users, p.dms, friendSet, blockedIds]);
 
   if (p.restoring) {
     return (
@@ -317,6 +458,9 @@ export default function App() {
     setSettingsOpen(false);
     setFriendsTab(null);
     setDiscoverOpen(false);
+    setRequestsOpen(false);
+    setForwardMsg(null);
+    setAccess({});
     setProfileUser(null);
     setQuickOpen(false);
     setPanel(null);
@@ -335,6 +479,9 @@ export default function App() {
         people={people}
         friendIds={p.friends}
         requestCount={p.incoming.length}
+        msgRequestCount={requestList.length}
+        pendingOut={pendingOut}
+        onOpenRequests={() => setRequestsOpen(true)}
         messages={shownMessages}
         unread={p.unread}
         active={p.active}
@@ -378,7 +525,14 @@ export default function App() {
         saved={saved}
         onSave={toggleSaved}
         onProfile={setProfileUser}
-        onAddFriend={(u) => p.friendRequest(u.name)}
+        onAddFriend={addFriend}
+        seenAt={p.reads[p.active] || 0}
+        onForward={setForwardMsg}
+        onAcceptRequest={(u) => acceptRequest(u.id)}
+        onDeclineRequest={(u) => declineRequest(u.id)}
+        onBlockUser={(u) => {
+          if (window.confirm(`Block ${u.name}? They won’t be able to message you again, and this request goes away.`)) doBlock(u);
+        }}
         onEditRoom={p.editRoom}
         onDeleteRoom={p.deleteRoom}
         onInvite={p.inviteToRoom}
@@ -461,13 +615,18 @@ export default function App() {
         const person = p.users.find((u) => u.id === profileUser.id) || profileUser;
         const relation = relationOf(person.id);
         const hasDm = !!p.messages[dmId(p.me.id, person.id)]?.length;
+        const pendingIn = incomingThreads.some((t) => t.other === person.id);
         return (
           <ProfileCard
             user={person}
             me={p.me}
             relation={relation}
-            canMessage={(relation === 'friends' || hasDm) && !blockedIds.includes(person.id)}
+            hasDm={hasDm}
+            pendingIn={pendingIn}
             isBlocked={blockedIds.includes(person.id)}
+            onLoadInfo={p.profileInfo}
+            onSaveNote={p.saveNote}
+            onOpenPerson={(f) => setProfileUser(p.users.find((u) => u.id === f.id) || f)}
             onBlock={doBlock}
             onUnblock={doUnblock}
             onClose={() => setProfileUser(null)}
@@ -480,7 +639,7 @@ export default function App() {
               setSettingsSection('profile');
               setSettingsOpen(true);
             }}
-            onAddFriend={(u) => p.friendRequest(u.name)}
+            onAddFriend={addFriend}
             onAccept={(u) => p.friendAccept(u.id)}
             onDecline={(u) => p.friendDecline(u.id)}
             onCancel={(u) => p.friendCancel(u.id)}
@@ -488,6 +647,24 @@ export default function App() {
           />
         );
       })()}
+      {requestsOpen && (
+        <MessageRequests
+          requests={requestList}
+          outgoing={outgoingList}
+          onAccept={acceptRequest}
+          onDecline={declineRequest}
+          onBlock={doBlock}
+          onProfile={(u) => setProfileUser(u)}
+          onOpen={(id) => {
+            setRequestsOpen(false);
+            select(id);
+          }}
+          onClose={() => setRequestsOpen(false)}
+        />
+      )}
+      {forwardMsg && (
+        <ForwardDialog msg={forwardMsg} rooms={p.rooms} people={forwardPeople} onPick={forwardTo} onClose={() => setForwardMsg(null)} />
+      )}
       <Toaster />
       <Confetti />
       {quickOpen && (

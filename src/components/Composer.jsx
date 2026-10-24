@@ -35,7 +35,7 @@ function fileToDataUrl(file) {
 export default function Composer({
   placeholder, disabled, users, me, replyTo, draft = '', onDraft,
   onCancelReply, onSend, onTyping, onOpenPoll, onEditLast,
-  sendKey = 'enter', shortcodes = true, spellcheck = true,
+  sendKey = 'enter', shortcodes = true, spellcheck = true, textOnly = false, maxChars = 2000,
 }) {
   const [text, setText] = useState(draft);
   const [image, setImage] = useState(null);
@@ -315,12 +315,13 @@ export default function Composer({
           spellCheck={spellcheck}
           onPaste={(e) => {
             const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
-            if (file) {
+            if (file && !textOnly) {
               e.preventDefault();
               attach(file);
             }
           }}
           placeholder={disabled ? 'Reconnecting…' : placeholder}
+          maxLength={maxChars}
           aria-label={placeholder}
           disabled={disabled}
         />
@@ -336,9 +337,11 @@ export default function Composer({
               e.target.value = '';
             }}
           />
-          <button className="tool" onClick={() => fileRef.current?.click()} disabled={disabled} aria-label="Attach an image" title="Attach an image">
-            <Icon name="clip" />
-          </button>
+          {!textOnly && (
+            <button className="tool" onClick={() => fileRef.current?.click()} disabled={disabled} aria-label="Attach an image" title="Attach an image">
+              <Icon name="clip" />
+            </button>
+          )}
           <div className="pop-anchor" ref={emojiRef}>
             <button className="tool" onClick={() => setEmojiOpen((v) => !v)} disabled={disabled} aria-label="Insert emoji" aria-expanded={emojiOpen} title="Emoji">
               <Icon name="smile" />
@@ -353,9 +356,11 @@ export default function Composer({
               </div>
             )}
           </div>
-          <button className="tool" onClick={onOpenPoll} disabled={disabled} aria-label="Create a poll" title="Create a poll">
-            <Icon name="poll" />
-          </button>
+          {!textOnly && (
+            <button className="tool" onClick={onOpenPoll} disabled={disabled} aria-label="Create a poll" title="Create a poll">
+              <Icon name="poll" />
+            </button>
+          )}
           <span className="bar-sep" />
           <button className="tool" onClick={() => wrap('**')} disabled={disabled} aria-label="Bold" title="Bold (Ctrl+B)">
             <Icon name="bold" size={16} />
@@ -369,8 +374,8 @@ export default function Composer({
           <button className="tool" onClick={() => wrap('`')} disabled={disabled} aria-label="Code" title="Code">
             <Icon name="code" size={16} />
           </button>
-          {text.length > 1500 && (
-            <span className={text.length >= 2000 ? 'char-count over' : 'char-count'} aria-live="polite">{text.length}/2000</span>
+          {text.length > maxChars - Math.min(500, Math.round(maxChars * 0.2)) && (
+            <span className={text.length >= maxChars ? 'char-count over' : 'char-count'} aria-live="polite">{text.length}/{maxChars}</span>
           )}
           <span className="bar-hint">
             {sendKey === 'mod'

@@ -16,6 +16,7 @@ export const defaultPrefs = {
   shortcodes: true, // turn :fire: into emoji when sending
   spellcheck: true,
   typing: true, // let others see when you are typing
+  reqAlerts: true, // alert when someone sends a message request
 };
 
 const mins = (hhmm) => {

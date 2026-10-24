@@ -21,6 +21,7 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 
 export default function Sidebar({
   me, rooms, people, friendIds, requestCount, messages, unread, active, status, starred, muted, anyUnread,
+  msgRequestCount = 0, pendingOut = [], onOpenRequests,
   onSelect, onCreateRoom, onLogout, onOpenSettings, onQuick, onMarkAllRead, onOpenFriends, onOpenDiscover,
 }) {
   const [query, setQuery] = useState('');
@@ -46,7 +47,7 @@ export default function Sidebar({
     .map((u) => {
       const id = dmId(me.id, u.id);
       const list = messages[id];
-      return { kind: 'dm', id, u, list, last: list?.[list.length - 1], closed: !friendIds.includes(u.id) };
+      return { kind: 'dm', id, u, list, last: list?.[list.length - 1], closed: !friendIds.includes(u.id), pending: pendingOut.includes(id) };
     })
     .sort(
       (a, b) =>
@@ -92,6 +93,7 @@ export default function Sidebar({
             <span className="conv-name">
               {x.kind === 'room' ? x.r.name : x.u.name}
               {x.kind === 'dm' && x.u.status?.emoji && <span className="conv-status"><Emoji char={x.u.status.emoji} /></span>}
+              {x.pending && <span className="req-pill" title="Waiting for them to accept">Request</span>}
             </span>
             <span className="conv-preview">
               {x.closed && !x.list?.length
@@ -277,6 +279,16 @@ export default function Sidebar({
                   <Icon name="chevron" size={12} /> Friends
                 </button>
               </h3>
+            <span className="title-actions">
+            <button
+              className="icon-btn with-count"
+              onClick={onOpenRequests}
+              aria-label={msgRequestCount ? `Message requests: ${msgRequestCount} waiting` : 'Message requests'}
+              title="Message requests"
+            >
+              <Icon name="inbox" size={15} />
+              {msgRequestCount > 0 && <span className="dot-count">{msgRequestCount}</span>}
+            </button>
             <button
               className="icon-btn with-count"
               onClick={() => onOpenFriends(requestCount ? 'requests' : 'add')}
@@ -286,7 +298,13 @@ export default function Sidebar({
               <Icon name="userPlus" size={15} />
               {requestCount > 0 && <span className="dot-count">{requestCount}</span>}
             </button>
+            </span>
           </div>
+          {msgRequestCount > 0 && (
+            <button className="request-note msg" onClick={onOpenRequests}>
+              <Icon name="inbox" size={14} /> {msgRequestCount} message {msgRequestCount === 1 ? 'request' : 'requests'} from people you don’t know
+            </button>
+          )}
           {requestCount > 0 && (
             <button className="request-note" onClick={() => onOpenFriends('requests')}>
               {requestCount} friend {requestCount === 1 ? 'request' : 'requests'} waiting

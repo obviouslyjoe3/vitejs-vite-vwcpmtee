@@ -8,6 +8,7 @@ import RoomGlyph from './RoomGlyph.jsx';
 import { PollDialog } from './Poll.jsx';
 import { mentionSource } from '../richText.jsx';
 import Emoji from '../Emoji.jsx';
+import { fmtClock } from '../format.js';
 
 const GROUP_MS = 5 * 60 * 1000;
 
@@ -28,6 +29,7 @@ export default function Thread({
   onDraft, onPanel, onStar, onMute, onSetTopic, onJumped,
   onBack, onSend, onTyping, onReact, onEdit, onDelete, onPin, onVote,
   hiddenCount = 0, onManageBlocked, onUnblock,
+  seenAt = 0, onForward, onAcceptRequest, onDeclineRequest, onBlockUser,
   sendKey = 'enter', shortcodes = true, spellcheck = true,
 }) {
   const scroller = useRef(null);
@@ -48,6 +50,8 @@ export default function Thread({
     const mine = [...messages].reverse().find((m) => m.user.id === me.id && m.text && !m.poll && !m.deleted && !m.pending && !m.failed);
     if (mine) setEditId(mine.id);
   };
+  const dmMode = conv?.dmMode;
+  const lockedTools = dmMode === 'incoming' || dmMode === 'waiting' || dmMode === 'request-new' || dmMode === 'request-sent';
   const pinCount = messages.filter((m) => m.pinned && !m.deleted).length;
 
   useLayoutEffect(() => {
@@ -158,9 +162,25 @@ export default function Thread({
         onPin={onPin}
         onVote={onVote}
         onOpenImage={setLightbox}
+        onForward={lockedTools ? undefined : onForward}
+        locked={lockedTools}
       />
     );
   });
+
+  // "Seen" under your newest message, once the other person has read it
+  const lastMsg = messages[messages.length - 1];
+  if (conv.kind === 'dm' && dmMode === 'open' && lastMsg && !lastMsg.system && lastMsg.user.id === me.id && !lastMsg.pending && !lastMsg.failed && !lastMsg.deleted) {
+    rows.push(
+      <div className={seenAt >= lastMsg.ts ? 'seen on' : 'seen'} key="seen" aria-live="polite">
+        {seenAt >= lastMsg.ts ? (
+          <><Icon name="checks" size={13} /> Seen {fmtClock(seenAt)}</>
+        ) : (
+          <><Icon name="check" size={13} /> Sent</>
+        )}
+      </div>
+    );
+  }
 
   const togglePanel = (mode) => onPanel(panel === mode ? null : mode);
 
@@ -239,7 +259,9 @@ export default function Thread({
                   <h2>{conv.kind === 'dm' ? conv.title : `#${conv.title}`}</h2>
                   <p>
                     {conv.kind === 'dm'
-                      ? `This is the start of your conversation with ${conv.title}.`
+                      ? dmMode === 'request-new'
+                        ? `You and ${conv.title} aren’t friends yet, so your first messages go to them as a request.`
+                        : `This is the start of your conversation with ${conv.title}.`
                       : 'Nothing here yet. Send the first message.'}
                   </p>
                 </div>
@@ -269,35 +291,69 @@ export default function Thread({
             <p><Icon name="ban" size={15} /> You blocked {conv.title}. They can’t message you, and you can’t message them. Old messages stay readable.</p>
             <button className="secondary" onClick={() => onUnblock(conv.user)}>Unblock</button>
           </div>
-        ) : conv.closed ? (
+        ) : dmMode === 'incoming' ? (
+          <div className="request-bar" role="region" aria-label="Message request">
+            <div className="rb-text">
+              <strong><Icon name="inbox" size={15} /> {conv.title} wants to message you</strong>
+              <p>You aren’t friends yet. If you accept, you can chat freely. If you delete this, {conv.title} isn’t told.</p>
+            </div>
+            <div className="rb-actions">
+              <button className="primary" onClick={() => onAcceptRequest(conv.user)}>Accept</button>
+              <button className="secondary" onClick={() => onDeclineRequest(conv.user)}>Delete</button>
+              <button className="text-btn danger-text" onClick={() => onBlockUser(conv.user)}><Icon name="ban" size={14} /> Block</button>
+            </div>
+          </div>
+        ) : dmMode === 'waiting' ? (
           <div className="closed-note" role="status">
             <p>
-              You and {conv.title} aren’t friends, so you can’t send new messages here. Your old messages are still
-              readable.
+              <Icon name="clock" size={15} /> Your message request is waiting for {conv.title}. You can send more once they accept.
+            </p>
+            {conv.canFriend && <button className="secondary" onClick={() => onAddFriend(conv.user)}>Add friend</button>}
+          </div>
+        ) : dmMode === 'closed' ? (
+          <div className="closed-note" role="status">
+            <p>
+              {conv.reasonText || `You and ${conv.title} aren’t friends, so you can’t send new messages here.`} Your old
+              messages are still readable.
             </p>
             <button className="primary" onClick={() => onAddFriend(conv.user)}>Add friend</button>
           </div>
         ) : (
-        <Composer
-          placeholder={conv.kind === 'dm' ? `Message ${conv.title}` : `Message #${conv.title}`}
-          disabled={offline}
-          users={users}
-          me={me}
-          replyTo={replyTo}
-          draft={draft}
-          onDraft={onDraft}
-          onCancelReply={() => setReplyTo(null)}
-          onEditLast={editLast}
-          onOpenPoll={() => setPollOpen(true)}
-          onSend={(payload) => {
-            onSend({ ...payload, replyTo });
-            setReplyTo(null);
-          }}
-          onTyping={onTyping}
-          sendKey={sendKey}
-          shortcodes={shortcodes}
-          spellcheck={spellcheck}
-        />
+          <>
+            {(dmMode === 'request-new' || dmMode === 'request-sent') && (
+              <div className="request-hint" role="status">
+                <Icon name="send" size={14} />
+                <span>
+                  {dmMode === 'request-new'
+                    ? <>This goes to {conv.title} as a <strong>message request</strong>. Text only, up to {conv.left} {conv.left === 1 ? 'message' : 'messages'} until they accept.</>
+                    : <>Message request sent. {conv.left} more {conv.left === 1 ? 'message' : 'messages'} allowed until {conv.title} accepts.</>}
+                </span>
+                <button className="link-btn" onClick={() => onAddFriend(conv.user)}>Add friend instead</button>
+              </div>
+            )}
+            <Composer
+              placeholder={conv.kind === 'dm' ? (dmMode === 'open' ? `Message ${conv.title}` : `Write a message request to ${conv.title}`) : `Message #${conv.title}`}
+              disabled={offline}
+              users={users}
+              me={me}
+              replyTo={replyTo}
+              draft={draft}
+              onDraft={onDraft}
+              onCancelReply={() => setReplyTo(null)}
+              onEditLast={editLast}
+              onOpenPoll={() => setPollOpen(true)}
+              onSend={(payload) => {
+                onSend({ ...payload, replyTo });
+                setReplyTo(null);
+              }}
+              onTyping={onTyping}
+              sendKey={sendKey}
+              shortcodes={shortcodes}
+              spellcheck={spellcheck}
+              textOnly={dmMode === 'request-new' || dmMode === 'request-sent'}
+              maxChars={dmMode === 'request-new' || dmMode === 'request-sent' ? 500 : 2000}
+            />
+          </>
         )}
       </div>
 
@@ -333,6 +389,7 @@ export default function Thread({
           onUnban={onUnban}
           onLeaveRoom={onLeaveRoom}
           onMembers={onMembers}
+          onOpenImage={setLightbox}
           onClose={() => onPanel(null)}
         />
       )}

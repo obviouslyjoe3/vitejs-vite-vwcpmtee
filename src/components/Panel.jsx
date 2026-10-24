@@ -123,8 +123,61 @@ function GroupManage({ room, onEditRoom }) {
   );
 }
 
+const URL_RE = /https?:\/\/[^\s<>"')]+/gi;
+const hostOf = (url) => {
+  try {
+    return new URL(url).host.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+};
+
+// Photos and links people shared in this conversation
+function SharedStuff({ messages, onOpenImage }) {
+  const live = messages.filter((m) => !m.deleted && !m.system);
+  const photos = live.filter((m) => m.image).slice(-12).reverse();
+  const links = [];
+  for (const m of [...live].reverse()) {
+    for (const url of (m.text || '').match(URL_RE) || []) {
+      if (!links.some((l) => l.url === url)) links.push({ url, from: m.user.name, ts: m.ts });
+    }
+    if (links.length >= 6) break;
+  }
+  if (!photos.length && !links.length) return null;
+  return (
+    <div className="info-block">
+      {photos.length > 0 && (
+        <>
+          <h3 className="panel-h">Shared photos</h3>
+          <div className="media-grid">
+            {photos.map((m) => (
+              <button key={m.id} type="button" onClick={() => onOpenImage?.(m.image)} aria-label={`Photo from ${m.user.name}`}>
+                <img src={m.image} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {links.length > 0 && (
+        <>
+          <h3 className="panel-h spaced">Shared links</h3>
+          <ul className="link-list">
+            {links.slice(0, 6).map((l) => (
+              <li key={l.url}>
+                <Icon name="link" size={14} />
+                <a href={l.url} target="_blank" rel="noopener noreferrer nofollow" title={l.url}>{hostOf(l.url)}</a>
+                <small>{l.from}</small>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 function InfoTab({
-  conv, users, friendUsers, me, starred, muted, onStar, onMute, onSetTopic, onExport,
+  conv, users, friendUsers, me, starred, muted, messages, onStar, onMute, onSetTopic, onExport, onOpenImage,
   onProfile, onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers,
 }) {
   const [topic, setTopic] = useState(conv.topic || '');
@@ -231,6 +284,8 @@ function InfoTab({
           )}
         </>
       )}
+
+      <SharedStuff messages={messages} onOpenImage={onOpenImage} />
 
       <div className="info-block">
         <button className={`toggle-row ${starred ? 'on' : ''}`} onClick={onStar} aria-pressed={starred}>
@@ -397,7 +452,7 @@ const TITLES = { info: 'Details', pins: 'Pinned messages', search: 'Search', sav
 
 export default function Panel({
   mode, conv, me, users, friendUsers, messages, starred, muted, saved, onStar, onMute, onSetTopic, onJump, onUnpin,
-  onOpenSaved, onRemoveSaved, onProfile, onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers, onClose,
+  onOpenSaved, onRemoveSaved, onProfile, onEditRoom, onDeleteRoom, onInvite, onKick, onUnban, onLeaveRoom, onMembers, onOpenImage, onClose,
 }) {
   return (
     <aside className="panel" aria-label={TITLES[mode]}>
@@ -419,6 +474,8 @@ export default function Panel({
             me={me}
             starred={starred}
             muted={muted}
+            messages={messages}
+            onOpenImage={onOpenImage}
             onStar={onStar}
             onMute={onMute}
             onSetTopic={onSetTopic}

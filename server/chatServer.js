@@ -37,6 +37,14 @@ const MAX_BLOCKED = 200;
 const MAX_OUTGOING_REQUESTS = 50;
 const MAX_OWNED_ROOMS = 10;
 const MAX_PUBLIC_MEMBERS_LISTED = 200;
+// message requests: someone who is not your friend can send up to a few text-only messages
+// until you accept. Keep BANNERS in sync with src/constants.js
+const MAX_REQUEST_MSGS = 3;
+const MAX_REQUEST_CHARS = 500;
+const MAX_PENDING_OUT = 20;
+const MAX_NOTES = 200;
+const BANNERS = ['violet', 'sunset', 'ocean', 'forest', 'candy', 'slate', 'aurora', 'dusk'];
+const DM_POLICIES = ['everyone', 'shared', 'friends'];
 
 const colorFor = (id) => {
   let h = 0;
@@ -58,7 +66,33 @@ const cleanStatus = (st) => {
   return text || emoji ? { emoji, text } : null;
 };
 
-const cleanBio = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+const cleanBio = (v) => String(v || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, 300);
+const cleanLocation = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+const cleanBanner = (v) => (BANNERS.includes(v) ? v : '');
+const cleanWebsite = (v) => {
+  const raw = String(v || '').trim().slice(0, 120);
+  if (!raw) return '';
+  try {
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if (!/^https?:$/.test(url.protocol) || !url.hostname.includes('.')) return '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+};
+const cleanInterests = (v) => {
+  const seen = new Set();
+  const out = [];
+  for (const x of Array.isArray(v) ? v : []) {
+    const t = String(x || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+    if (t && !seen.has(t.toLowerCase())) {
+      seen.add(t.toLowerCase());
+      out.push(t);
+    }
+  }
+  return out.slice(0, 6);
+};
+const cleanNote = (v) => String(v || '').trim().slice(0, 200);
 const cleanPronouns = (v) => String(v || '').trim().slice(0, 20);
 const cleanTz = (v) => {
   if (typeof v !== 'string' || !v) return '';
@@ -167,6 +201,9 @@ export function attachChat(httpServer) {
     }
   }
   const requests = saved.requests || []; // pending friend requests: { from, to, ts }
+  // Message requests: dmId -> { from, to, state: 'pending' | 'declined' | 'accepted', sent, ts }
+  const threads = saved.threads || {};
+  const reads = saved.reads || {}; // dmId -> { userId: ts of their last read }
   const connections = new Map(); // userId -> open socket count
   const byName = new Map([...users.values()].map((u) => [u.key, u.id])); // lowercase username -> id
 
@@ -175,7 +212,7 @@ export function attachChat(httpServer) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
       fs.writeFileSync(
         DATA_FILE,
-        JSON.stringify({ schema: SCHEMA, users: Object.fromEntries(users), rooms, history, requests })
+        JSON.stringify({ schema: SCHEMA, users: Object.fromEntries(users), rooms, history, requests, threads, reads })
       );
     } catch {
       /* read-only file systems just skip persistence */
@@ -241,6 +278,8 @@ export function attachChat(httpServer) {
   const privacyOf = (u) => ({
     requests: u?.privacy?.requests === 'nobody' ? 'nobody' : 'everyone',
     showOnline: u?.privacy?.showOnline !== false,
+    dms: DM_POLICIES.includes(u?.privacy?.dms) ? u.privacy.dms : 'everyone',
+    readReceipts: u?.privacy?.readReceipts !== false,
   });
   const blockState = (id) =>
     (users.get(id)?.blocked || [])
@@ -248,6 +287,85 @@ export function attachChat(httpServer) {
       .filter(Boolean)
       .map((u) => ({ id: u.id, name: u.name, color: u.color }));
   const pushBlocked = (id) => io.to(`user:${id}`).emit('blocked', blockState(id));
+
+  // ---- message requests ----
+  const dmKey = (a, b) => 'dm:' + [a, b].sort().join('|');
+  // The thread record, unless it is a declined request the viewer never wants to see again.
+  const dmThreadFor = (roomId, viewerId) => {
+    const t = threads[roomId];
+    if (!t) return null;
+    if (t.state === 'declined' && t.to === viewerId) return null;
+    return t;
+  };
+  const hasSharedContext = (a, b) => {
+    const fa = users.get(a)?.friends || [];
+    const fb = users.get(b)?.friends || [];
+    if (fa.some((x) => fb.includes(x))) return true;
+    return rooms.some((r) => !r.official && !r.autoJoin && r.members.includes(a) && r.members.includes(b));
+  };
+  // What `a` may do when writing to `b`:
+  //   open     normal conversation          request  first messages go to b's request inbox
+  //   waiting  request sent, limit reached  no       b does not take messages from you
+  //   blocked  either side blocked
+  const dmAccess = (a, b) => {
+    if (a === b || !users.has(a) || !users.has(b)) return { mode: 'no', reason: 'missing' };
+    if (isBlocked(a, b)) return { mode: 'blocked' };
+    if (areFriends(a, b)) return { mode: 'open' };
+    const key = dmKey(a, b);
+    const t = threads[key];
+    if (t?.state === 'accepted') return { mode: 'open' };
+    if (t && t.to === a) return { mode: 'open' }; // answering a request accepts it
+    if (t && t.from === a) {
+      const left = MAX_REQUEST_MSGS - (t.sent || 0);
+      return left > 0 ? { mode: 'request', left, started: true } : { mode: 'waiting' };
+    }
+    const policy = privacyOf(users.get(b)).dms;
+    if (policy === 'friends') return { mode: 'no', reason: 'friends' };
+    if (policy === 'shared' && !hasSharedContext(a, b)) return { mode: 'no', reason: 'shared' };
+    return { mode: 'request', left: MAX_REQUEST_MSGS, started: false };
+  };
+  // What a person sees of their message threads (a declined request just looks pending to its sender).
+  const threadsFor = (id) => {
+    const out = [];
+    for (const [key, t] of Object.entries(threads)) {
+      if (t.from !== id && t.to !== id) continue;
+      if (t.state === 'declined' && t.to === id) continue;
+      out.push({
+        id: key,
+        other: t.from === id ? t.to : t.from,
+        incoming: t.to === id,
+        state: t.state === 'accepted' ? 'accepted' : 'pending',
+        sent: t.sent || 0,
+        left: Math.max(0, MAX_REQUEST_MSGS - (t.sent || 0)),
+        ts: t.ts,
+      });
+    }
+    return out;
+  };
+  const pushThreads = (...ids) => {
+    for (const id of ids) io.to(`user:${id}`).emit('dms', threadsFor(id));
+  };
+  const acceptThread = (a, b) => {
+    const key = dmKey(a, b);
+    const t = threads[key];
+    if (!t || t.state === 'accepted') return false;
+    t.state = 'accepted';
+    return true;
+  };
+  // Read receipts: what `viewer` may see of the other person's last read time in each chat.
+  const readsFor = (viewerId) => {
+    const out = {};
+    if (!privacyOf(users.get(viewerId)).readReceipts) return out;
+    for (const [key, map] of Object.entries(reads)) {
+      if (!isDm(key)) continue;
+      const m = dmMembers(key);
+      if (!m.includes(viewerId)) continue;
+      const other = m[0] === viewerId ? m[1] : m[0];
+      if (map[other] && privacyOf(users.get(other)).readReceipts) out[key] = map[other];
+    }
+    return out;
+  };
+  const pushReads = (id) => io.to(`user:${id}`).emit('reads', readsFor(id));
 
   // Live actions (send, react, type...) need access; DMs also need the two people to still be friends.
   const canAccess = (user, roomId) => {
@@ -259,12 +377,20 @@ export function attachChat(httpServer) {
         m[0] !== m[1] &&
         m.includes(user.id) &&
         m.every((id) => users.has(id)) &&
-        areFriends(m[0], m[1]) &&
-        !isBlocked(m[0], m[1])
+        !isBlocked(m[0], m[1]) &&
+        (areFriends(m[0], m[1]) || dmThreadFor(roomId, user.id))
       );
     }
     const room = rooms.find((r) => r.id === roomId);
     return !!room && room.members.includes(user.id);
+  };
+
+  // Live actions (typing, reacting, pinning, voting) need a real conversation, not just a pending request.
+  const canLive = (user, roomId) => {
+    if (!canAccess(user, roomId)) return false;
+    if (!isDm(roomId)) return true;
+    const [a, b] = dmMembers(roomId);
+    return areFriends(a, b) || threads[roomId]?.state === 'accepted';
   };
 
   const visibleRooms = (userId) => rooms.filter((r) => r.members.includes(userId));
@@ -314,7 +440,7 @@ export function attachChat(httpServer) {
     for (const key of Object.keys(history)) {
       if (!isDm(key)) continue;
       const m = dmMembers(key);
-      if (m.includes(id)) out.add(m[0] === id ? m[1] : m[0]);
+      if (m.includes(id) && (!threads[key] || dmThreadFor(key, id))) out.add(m[0] === id ? m[1] : m[0]);
     }
     return out;
   };
@@ -340,6 +466,10 @@ export function attachChat(httpServer) {
     bio: u.bio || '',
     pronouns: u.pronouns || '',
     tz: u.tz || '',
+    banner: u.banner || '',
+    location: u.location || '',
+    website: u.website || '',
+    interests: u.interests || [],
     joinedAt: u.joinedAt,
     lastSeen: privacyOf(u).showOnline ? u.lastSeen || null : null,
     online: privacyOf(u).showOnline && (connections.get(u.id) || 0) > 0,
@@ -379,7 +509,7 @@ export function attachChat(httpServer) {
     for (const r of visibleRooms(userId)) out[r.id] = history[r.id] || [];
     // DMs stay readable after an unfriend; they just cannot be added to.
     for (const key of Object.keys(history)) {
-      if (isDm(key) && dmMembers(key).includes(userId)) out[key] = history[key];
+      if (isDm(key) && dmMembers(key).includes(userId) && (!threads[key] || dmThreadFor(key, userId))) out[key] = history[key];
     }
     return out;
   };
@@ -432,6 +562,8 @@ export function attachChat(httpServer) {
         friends: friendState(user.id),
         blocked: blockState(user.id),
         privacy: privacyOf(user),
+        dms: threadsFor(user.id),
+        reads: readsFor(user.id),
       };
     };
 
@@ -643,13 +775,44 @@ export function attachChat(httpServer) {
           text = rolled;
         }
       }
-      if (!text && !image && !poll) return ack?.({ error: 'Message is empty.' });
+      if (!text && !image && !poll && !p?.forward) return ack?.({ error: 'Message is empty.' });
 
       const room = String(p?.room || '');
-      if (!canAccess(user, room)) {
-        return ack?.({
-          error: isDm(room) ? 'You can only message friends.' : 'You are not in that room.',
-        });
+      // Direct messages: friends and accepted chats are open; anyone else goes through a message request.
+      let request = null;
+      if (isDm(room)) {
+        const m = dmMembers(room);
+        if (m.length !== 2 || m[0] === m[1] || !m.includes(user.id) || !m.every((id) => users.has(id))) {
+          return ack?.({ error: 'That conversation does not exist.' });
+        }
+        const other = m[0] === user.id ? m[1] : m[0];
+        const access = dmAccess(user.id, other);
+        const name = users.get(other).name;
+        if (access.mode === 'blocked') return ack?.({ error: 'You can only message friends.' });
+        if (access.mode === 'no') {
+          return ack?.({
+            error:
+              access.reason === 'friends'
+                ? `${name} only takes messages from friends.`
+                : access.reason === 'shared'
+                ? `${name} only takes messages from friends and people they share a group with.`
+                : 'That person no longer exists.',
+          });
+        }
+        if (access.mode === 'waiting') {
+          return ack?.({ error: `Wait for ${name} to accept your message request before sending more.` });
+        }
+        if (access.mode === 'request') {
+          if (image || poll || p?.forward) return ack?.({ error: 'Message requests can only contain text.' });
+          if (text.length > MAX_REQUEST_CHARS) return ack?.({ error: `Message requests are limited to ${MAX_REQUEST_CHARS} characters.` });
+          if (!access.started) {
+            const open = Object.values(threads).filter((t) => t.from === user.id && t.state !== 'accepted').length;
+            if (open >= MAX_PENDING_OUT) return ack?.({ error: 'You have too many unanswered message requests.' });
+          }
+          request = { other, started: access.started };
+        }
+      } else if (!canAccess(user, room)) {
+        return ack?.({ error: 'You are not in that room.' });
       }
 
       let replyTo = null;
@@ -666,15 +829,30 @@ export function attachChat(httpServer) {
         }
       }
 
+      // Forwarding copies a message you can see; the label comes from the original, so it cannot be faked.
+      let forwarded = null;
+      let sendText = text;
+      let sendImage = image;
+      if (p?.forward && typeof p.forward === 'object') {
+        const srcRoom = String(p.forward.room || '');
+        const orig = canAccess(user, srcRoom) ? findMessage(srcRoom, p.forward.id) : null;
+        if (!orig || orig.deleted || (!orig.text && !orig.image)) return ack?.({ error: 'That message can no longer be forwarded.' });
+        forwarded = { name: orig.user.name, ts: orig.ts };
+        sendText = String(orig.text || '').slice(0, 2000);
+        sendImage = orig.image || null;
+        action = false;
+      }
+
       const msg = {
         id: randomUUID(),
         cid: String(p?.cid || '').slice(0, 64),
         room,
-        text,
-        image,
+        text: sendText,
+        image: sendImage,
         poll,
         action,
         pinned: false,
+        forwarded,
         replyTo,
         user: { id: user.id, name: user.name, color: user.color },
         ts: Date.now(),
@@ -690,6 +868,30 @@ export function attachChat(httpServer) {
       for (const old of withImages.slice(0, Math.max(0, withImages.length - MAX_IMAGES_KEPT))) {
         old.image = null;
         old.imageExpired = true;
+      }
+
+      if (request) {
+        // First contact: open (or keep using) the thread and put it in the other person's request inbox.
+        const t = (threads[room] ||= { from: user.id, to: request.other, state: 'pending', sent: 0, ts: Date.now() });
+        t.sent = (t.sent || 0) + 1;
+        save();
+        if (t.state === 'declined') {
+          io.to(`user:${user.id}`).emit('message:new', msg); // the sender is never told it was declined
+        } else {
+          sendUsers(request.other);
+          pushThreads(user.id, request.other);
+          io.to(audience(room)).emit('message:new', msg);
+          if (!request.started) {
+            io.to(`user:${request.other}`).emit('dm:request', { id: room, from: { id: user.id, name: user.name }, text: msg.text.slice(0, 140) });
+          }
+        }
+        return ack?.({ ok: true, request: true });
+      }
+      // Answering someone's request (or writing first to someone who declined you) opens the chat.
+      if (isDm(room) && acceptThread(user.id, dmMembers(room).find((id) => id !== user.id))) {
+        const other = dmMembers(room).find((id) => id !== user.id);
+        pushThreads(user.id, other);
+        io.to(`user:${other}`).emit('dm:accepted', { id: room, by: { id: user.id, name: user.name } });
       }
       save();
 
@@ -720,7 +922,7 @@ export function attachChat(httpServer) {
     socket.on('message:pin', (p) => {
       const user = socket.data.user;
       const room = String(p?.room || '');
-      if (!user || !canAccess(user, room)) return;
+      if (!user || !canLive(user, room)) return;
       const msg = findMessage(room, p?.id);
       if (!msg || msg.deleted) return;
       const pinned = !msg.pinned;
@@ -730,7 +932,7 @@ export function attachChat(httpServer) {
     socket.on('poll:vote', (p) => {
       const user = socket.data.user;
       const room = String(p?.room || '');
-      if (!user || !canAccess(user, room)) return;
+      if (!user || !canLive(user, room)) return;
       const msg = findMessage(room, p?.id);
       if (!msg?.poll || msg.deleted) return;
       const opt = msg.poll.options.find((o) => o.id === String(p?.option));
@@ -745,14 +947,14 @@ export function attachChat(httpServer) {
     socket.on('typing', (p) => {
       const user = socket.data.user;
       const room = String(p?.room || '');
-      if (!user || !canAccess(user, room)) return;
+      if (!user || !canLive(user, room)) return;
       socket.to(audience(room)).emit('typing', { room, user: { id: user.id, name: user.name } });
     });
 
     socket.on('react', (p) => {
       const user = socket.data.user;
       const room = String(p?.room || '');
-      if (!user || !canAccess(user, room) || !REACTIONS.includes(p?.emoji)) return;
+      if (!user || !canLive(user, room) || !REACTIONS.includes(p?.emoji)) return;
       const msg = findMessage(room, p.messageId);
       if (!msg || msg.deleted) return;
       const list = (msg.reactions[p.emoji] ||= []);
@@ -763,9 +965,9 @@ export function attachChat(httpServer) {
       patchMessage(room, msg, { reactions: msg.reactions });
     });
 
-    socket.on('profile:update', (p) => {
+    socket.on('profile:update', (p, ack) => {
       const user = socket.data.user;
-      if (!user) return;
+      if (!user) return ack?.({ error: 'Sign in first.' });
       const patch = {};
       if (p?.color !== undefined) {
         if (!COLORS.includes(p.color)) return;
@@ -775,10 +977,58 @@ export function attachChat(httpServer) {
       if (p?.bio !== undefined) patch.bio = cleanBio(p.bio);
       if (p?.pronouns !== undefined) patch.pronouns = cleanPronouns(p.pronouns);
       if (p?.tz !== undefined) patch.tz = cleanTz(p.tz);
+      if (p?.banner !== undefined) patch.banner = cleanBanner(p.banner);
+      if (p?.location !== undefined) patch.location = cleanLocation(p.location);
+      if (p?.website !== undefined) patch.website = cleanWebsite(p.website);
+      if (p?.interests !== undefined) patch.interests = cleanInterests(p.interests);
       if (!Object.keys(patch).length) return;
       Object.assign(user, patch); // socket.data.user is the stored record itself
       save();
       broadcastUser(user);
+      ack?.({ ok: true, user: publicUser(user) });
+    });
+
+    // A full profile as the viewer sees it: mutual friends and groups, their private note, and
+    // whether (and how) they can message this person.
+    socket.on('profile:get', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const id = typeof p?.id === 'string' ? p.id : '';
+      const other = users.get(id);
+      if (!other || !relatedIds(user.id).includes(id)) return ack?.({ error: 'That profile is not available.' });
+      const mine = new Set(user.friends);
+      const mutual = other.friends
+        .filter((x) => mine.has(x) && x !== user.id && !isBlocked(user.id, x))
+        .map((x) => users.get(x))
+        .filter(Boolean);
+      const shared = rooms.filter((r) => !r.official && !r.autoJoin && r.members.includes(user.id) && r.members.includes(id));
+      ack?.({
+        id,
+        mutualFriends: mutual.slice(0, 8).map((u) => ({ id: u.id, name: u.name, color: u.color })),
+        mutualFriendCount: mutual.length,
+        mutualRooms: shared.slice(0, 8).map((r) => ({ id: r.id, name: r.name, icon: r.icon, private: r.private })),
+        mutualRoomCount: shared.length,
+        note: user.notes?.[id] || '',
+        dm: id === user.id ? { mode: 'no', reason: 'self' } : dmAccess(user.id, id),
+      });
+    });
+
+    // A private note about someone. Only you ever see it.
+    socket.on('profile:note', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const id = typeof p?.id === 'string' ? p.id : '';
+      if (!users.has(id) || id === user.id) return ack?.({ error: 'That person no longer exists.' });
+      const text = cleanNote(p?.text);
+      user.notes ||= {};
+      if (text) {
+        if (!user.notes[id] && Object.keys(user.notes).length >= MAX_NOTES) return ack?.({ error: 'You have too many notes.' });
+        user.notes[id] = text;
+      } else {
+        delete user.notes[id];
+      }
+      save();
+      ack?.({ ok: true, note: text });
     });
 
     // ---- friends ----
@@ -811,8 +1061,10 @@ export function attachChat(httpServer) {
         requests.splice(theirs, 1);
         user.friends.push(other.id);
         other.friends.push(user.id);
+        acceptThread(user.id, other.id);
         save();
         pushFriends(user.id, other.id);
+        pushThreads(user.id, other.id);
         return ack?.({ ok: true, accepted: true, name: other.name });
       }
       if (privacyOf(other).requests === 'nobody') return ack?.({ error: `${other.name} is not accepting friend requests.` });
@@ -839,8 +1091,10 @@ export function attachChat(httpServer) {
       requests.splice(at, 1);
       if (!user.friends.includes(other.id)) user.friends.push(other.id);
       if (!other.friends.includes(user.id)) other.friends.push(user.id);
+      acceptThread(user.id, other.id);
       save();
       pushFriends(user.id, other.id);
+      pushThreads(user.id, other.id);
       ack?.({ ok: true });
     });
 
@@ -866,8 +1120,10 @@ export function attachChat(httpServer) {
       if (!other) return;
       user.friends = user.friends.filter((id) => id !== other.id);
       other.friends = other.friends.filter((id) => id !== user.id);
+      delete threads[dmKey(user.id, other.id)]; // unfriending closes the chat again
       save();
       pushFriends(user.id, other.id);
+      pushThreads(user.id, other.id);
       ack?.({ ok: true });
     });
 
@@ -889,8 +1145,10 @@ export function attachChat(httpServer) {
         const r = requests[i];
         if ((r.from === user.id && r.to === other.id) || (r.from === other.id && r.to === user.id)) requests.splice(i, 1);
       }
+      delete threads[dmKey(user.id, other.id)];
       save();
       pushFriends(user.id, other.id);
+      pushThreads(user.id, other.id);
       pushBlocked(user.id);
       ack?.({ ok: true, name: other.name });
     });
@@ -911,11 +1169,71 @@ export function attachChat(httpServer) {
       const next = privacyOf(user);
       if (p?.requests === 'everyone' || p?.requests === 'nobody') next.requests = p.requests;
       if (typeof p?.showOnline === 'boolean') next.showOnline = p.showOnline;
+      if (DM_POLICIES.includes(p?.dms)) next.dms = p.dms;
+      if (typeof p?.readReceipts === 'boolean') next.readReceipts = p.readReceipts;
       user.privacy = next;
       save();
       broadcastUser(user);
       io.to(`user:${user.id}`).emit('privacy', next);
+      // read receipts work both ways, so everyone you chat with sees a fresh picture too
+      pushReads(user.id);
+      relatedIds(user.id).filter((x) => x !== user.id).forEach(pushReads);
       ack?.({ ok: true, privacy: next });
+    });
+
+    // ---- message requests ----
+    const requestFrom = (ack, id) => {
+      const user = socket.data.user;
+      if (!user) {
+        ack?.({ error: 'Sign in first.' });
+        return null;
+      }
+      const key = dmKey(user.id, typeof id === 'string' ? id : '');
+      const t = threads[key];
+      if (!t || t.to !== user.id || t.state === 'accepted') {
+        ack?.({ error: 'That request is no longer there.' });
+        return null;
+      }
+      return { user, key, t, other: users.get(t.from) };
+    };
+
+    socket.on('dm:accept', (p, ack) => {
+      const r = requestFrom(ack, p?.id);
+      if (!r) return;
+      if (!r.other || isBlocked(r.user.id, r.other.id)) return ack?.({ error: 'That request is no longer there.' });
+      r.t.state = 'accepted';
+      save();
+      pushThreads(r.user.id, r.other.id);
+      io.to(`user:${r.other.id}`).emit('dm:accepted', { id: r.key, by: { id: r.user.id, name: r.user.name } });
+      ack?.({ ok: true, id: r.key });
+    });
+
+    // Delete: the request disappears for you and the sender is not told. They can send a couple more
+    // messages, then they are stuck waiting. Writing to them yourself later opens the chat.
+    socket.on('dm:decline', (p, ack) => {
+      const r = requestFrom(ack, p?.id);
+      if (!r) return;
+      r.t.state = 'declined';
+      save();
+      pushThreads(r.user.id);
+      io.to(`user:${r.user.id}`).emit('dm:remove', { id: r.key });
+      if (r.other) sendUsers(r.user.id);
+      ack?.({ ok: true });
+    });
+
+    // Tell the other side how far you have read, so they can show "Seen".
+    socket.on('read', (p) => {
+      const user = socket.data.user;
+      const room = String(p?.room || '');
+      if (!user || !isDm(room) || !canLive(user, room)) return;
+      const map = (reads[room] ||= {});
+      const now = Date.now();
+      if (now - (map[user.id] || 0) < 250) return;
+      map[user.id] = now;
+      save();
+      if (!privacyOf(user).readReceipts) return;
+      const other = dmMembers(room).find((id) => id !== user.id);
+      if (privacyOf(users.get(other)).readReceipts) io.to(`user:${other}`).emit('read:update', { room, ts: now });
     });
 
     // ---- rooms ----
