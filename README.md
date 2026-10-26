@@ -9,6 +9,19 @@ Real-time chat built with React, Vite and Socket.IO.
 Open the URL in two tabs (or on two devices) and join with different names.
 The chat server runs inside Vite's dev server, so there is nothing else to start.
 
+## v23: calling
+One-to-one **voice and video calls** in any direct message you can chat in (friends, or an accepted request).
+- Tap the phone or camera button in the conversation header. The other person gets a ringing card (with **Answer**, **Answer audio only** for video calls, and **Decline**), a ringtone and, if the tab is in the background and desktop alerts are allowed, a desktop notification
+- In a call: mute, camera on/off (an audio call can add video at any time), **minimize** to a small floating window so you can keep chatting, and hang up. You see when the other person is muted or has their camera off
+- The conversation gets small notices: **Missed call from …** (counts as unread), declined calls and **Call ended · 4:12**
+- Privacy: calls follow the same rules as messages. Blocking someone ends any call with them. **Settings > Privacy & blocking > Calls** turns incoming calls off. Someone who is offline, appearing offline or has calls off just shows as "isn't available", so a call never reveals who is around
+- If you have another tab open it rings too; answering in one stops the others. One call at a time per person
+- How it works: the server only passes the WebRTC handshake between the two people (`call:*` events in `server/chatServer.js`). Audio and video go straight between the browsers, so the server carries no media
+- **Needs https** to reach the microphone and camera. `localhost` is fine for testing on one machine; a phone on `http://192.168.x.x:5173` is not, so test with a hosted copy or an https tunnel
+- **TURN server (optional, recommended in production):** calls use public STUN servers, which connect most people. Strict firewalls and some mobile networks need a TURN relay. Set `PARLEY_ICE_SERVERS` on the server, for example `PARLEY_ICE_SERVERS='[{"urls":"turn:turn.example.com:3478","username":"u","credential":"p"},{"urls":"stun:stun.l.google.com:19302"}]'`
+- **Screen sharing** (desktop browsers): the monitor button in a call shares a screen, window or tab. It replaces your camera for the other person, who sees it uncropped with a “Sharing their screen” badge. Stop with the same button or the browser’s own Stop sharing bar; your camera comes back if it was on. Phones can watch a share but not start one. Computer audio is not shared
+- Not included yet: group calls, ending a call you left open on a closed laptop (it drops when the connection does)
+
 ## v22 layout
 The app is now a full-bleed three-column workspace: an icon rail (Chats, Friends, Requests, Rooms, alerts, you), the conversation list (filter tabs: All, Unread, Rooms, People) and the thread. On phones the rail becomes a tab bar. Message actions float beside the bubble, and tap a message on touch screens to show them. Fonts are Archivo and Public Sans (loaded in `index.html`); the default accent is Cobalt, and the other accents still work.
 

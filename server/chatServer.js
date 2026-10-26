@@ -303,6 +303,7 @@ export function attachChat(httpServer) {
     showOnline: u?.privacy?.showOnline !== false,
     dms: DM_POLICIES.includes(u?.privacy?.dms) ? u.privacy.dms : 'everyone',
     readReceipts: u?.privacy?.readReceipts !== false,
+    calls: u?.privacy?.calls !== false,
   });
   const blockState = (id) =>
     (users.get(id)?.blocked || [])
@@ -595,6 +596,68 @@ export function attachChat(httpServer) {
   const dropMember = (room, userId) => {
     room.members = room.members.filter((id) => id !== userId);
     io.in(`user:${userId}`).socketsLeave(`room:${room.id}`);
+  };
+
+  // ---- calls ----
+  // One-to-one voice and video. The server only relays the handshake (who is calling, the WebRTC
+  // offer/answer and network candidates); audio and video travel straight between the two browsers.
+  const RING_MS = 45_000;
+  const calls = new Map(); // call id -> { id, from, to, video, state, fromSocket, toSocket, answeredAt, timer }
+  const callOf = new Map(); // user id -> call id (nobody is in two calls at once)
+  const ICE_SERVERS = (() => {
+    // Add a TURN server for people behind strict firewalls: PARLEY_ICE_SERVERS='[{"urls":"turn:...","username":"..","credential":".."}]'
+    try {
+      const v = JSON.parse(process.env.PARLEY_ICE_SERVERS || '');
+      if (Array.isArray(v) && v.length) return v;
+    } catch {}
+    return [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  })();
+
+  const fmtLength = (ms) => {
+    const t = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const sec = String(t % 60).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+  };
+
+  // A small notice in the conversation. Missed calls count as unread; the rest stay quiet.
+  const callNotice = (key, text, missed = false) => {
+    const msg = {
+      id: randomUUID(), cid: '', room: key, text, image: null, poll: null, action: false,
+      pinned: false, replyTo: null, system: true, call: true, missed, quiet: !missed,
+      user: { id: 'system', name: 'Parley', color: '#888888' },
+      ts: Date.now(), reactions: {}, edited: false, deleted: false,
+    };
+    (history[key] ||= []).push(msg);
+    if (history[key].length > MAX_HISTORY) history[key].splice(0, history[key].length - MAX_HISTORY);
+    save();
+    io.to(audience(key)).emit('message:new', msg);
+  };
+
+  const endCall = (call, reason) => {
+    if (!calls.delete(call.id)) return;
+    clearTimeout(call.timer);
+    if (callOf.get(call.from) === call.id) callOf.delete(call.from);
+    if (callOf.get(call.to) === call.id) callOf.delete(call.to);
+    // every open tab of both people hears about it; tabs that never knew this call ignore it
+    io.to(`user:${call.from}`).to(`user:${call.to}`).emit('call:ended', { id: call.id, reason });
+    const key = dmKey(call.from, call.to);
+    const caller = users.get(call.from);
+    const callee = users.get(call.to);
+    const kind = call.video ? 'video call' : 'call';
+    if (call.state === 'active') {
+      callNotice(key, `${call.video ? 'Video call' : 'Call'} ended · ${fmtLength(Date.now() - call.answeredAt)}`);
+    } else if (reason === 'declined') {
+      callNotice(key, `${callee?.name || 'They'} declined the ${kind}`);
+    } else if (reason === 'missed' || reason === 'cancelled') {
+      callNotice(key, `Missed ${kind} from ${caller?.name || 'someone'}`, true);
+    }
+  };
+  const endCallsBetween = (a, b, reason = 'ended') => {
+    for (const c of [...calls.values()]) {
+      if ((c.from === a && c.to === b) || (c.from === b && c.to === a)) endCall(c, reason);
+    }
   };
 
   // ---- connections ----
@@ -1250,6 +1313,7 @@ export function attachChat(httpServer) {
         if ((r.from === user.id && r.to === other.id) || (r.from === other.id && r.to === user.id)) requests.splice(i, 1);
       }
       delete threads[dmKey(user.id, other.id)];
+      endCallsBetween(user.id, other.id);
       save();
       pushFriends(user.id, other.id);
       pushThreads(user.id, other.id);
@@ -1275,6 +1339,7 @@ export function attachChat(httpServer) {
       if (typeof p?.showOnline === 'boolean') next.showOnline = p.showOnline;
       if (DM_POLICIES.includes(p?.dms)) next.dms = p.dms;
       if (typeof p?.readReceipts === 'boolean') next.readReceipts = p.readReceipts;
+      if (typeof p?.calls === 'boolean') next.calls = p.calls;
       user.privacy = next;
       save();
       broadcastUser(user);
@@ -1552,12 +1617,110 @@ export function attachChat(httpServer) {
       ack?.({ ok: true });
     });
 
+    // ---- calls ----
+    const callFor = (p) => {
+      const user = socket.data.user;
+      const call = user && typeof p?.id === 'string' ? calls.get(p.id) : null;
+      return call && (call.from === user.id || call.to === user.id) ? { user, call } : null;
+    };
+
+    socket.on('call:invite', (p, ack) => {
+      const user = socket.data.user;
+      if (!user) return ack?.({ error: 'Sign in first.' });
+      const to = users.get(typeof p?.to === 'string' ? p.to : '');
+      if (!to || to.id === user.id) return ack?.({ error: 'Pick someone to call.' });
+      const now = Date.now();
+      if (now - (socket.data.lastInvite || 0) < 1500) return ack?.({ error: 'Slow down a little.' });
+      socket.data.lastInvite = now;
+      const key = dmKey(user.id, to.id);
+      if (isBlocked(user.id, to.id) || !canLive(user, key)) return ack?.({ error: 'You can only call people you can message.' });
+      if (callOf.has(user.id)) return ack?.({ error: 'You are already in a call.' });
+      // Offline, hidden (“appear offline”) and calls-off all look the same, so a call never reveals who is around.
+      const away = `${to.name} isn’t available right now.`;
+      if (!connections.has(to.id) || !privacyOf(to).showOnline || !privacyOf(to).calls) return ack?.({ error: away });
+      if (callOf.has(to.id)) return ack?.({ error: `${to.name} is on another call.` });
+
+      const call = {
+        id: randomUUID(), from: user.id, to: to.id, video: !!p?.video, state: 'ringing',
+        fromSocket: socket.id, toSocket: null, answeredAt: 0, timer: null,
+      };
+      call.timer = setTimeout(() => endCall(call, 'missed'), RING_MS);
+      calls.set(call.id, call);
+      callOf.set(user.id, call.id);
+      callOf.set(to.id, call.id);
+      io.to(`user:${to.id}`).emit('call:incoming', { id: call.id, video: call.video, from: publicUser(user), ice: ICE_SERVERS });
+      ack?.({ ok: true, id: call.id, ice: ICE_SERVERS });
+    });
+
+    socket.on('call:answer', (p, ack) => {
+      const r = callFor(p);
+      if (!r || r.call.to !== r.user.id || r.call.state !== 'ringing') return ack?.({ error: 'That call has ended.' });
+      const { call, user } = r;
+      clearTimeout(call.timer);
+      call.state = 'active';
+      call.answeredAt = Date.now();
+      call.toSocket = socket.id;
+      // the person's other tabs stop ringing
+      socket.to(`user:${user.id}`).emit('call:ended', { id: call.id, reason: 'elsewhere' });
+      io.to(call.fromSocket).emit('call:accepted', { id: call.id });
+      ack?.({ ok: true });
+    });
+
+    socket.on('call:decline', (p) => {
+      const r = callFor(p);
+      if (r && r.call.to === r.user.id && r.call.state === 'ringing') endCall(r.call, 'declined');
+    });
+
+    // Hang up (or cancel while it is still ringing)
+    socket.on('call:end', (p) => {
+      const r = callFor(p);
+      if (!r) return;
+      if (r.call.state === 'active') endCall(r.call, 'ended');
+      else if (r.call.from === r.user.id) endCall(r.call, 'cancelled');
+    });
+
+    // The WebRTC handshake, passed to the other side's tab only
+    socket.on('call:signal', (p) => {
+      const r = callFor(p);
+      if (!r || r.call.state !== 'active') return;
+      const target = socket.id === r.call.fromSocket ? r.call.toSocket : socket.id === r.call.toSocket ? r.call.fromSocket : null;
+      if (!target) return;
+      const data = {};
+      const d = p?.data?.description;
+      if (d && (d.type === 'offer' || d.type === 'answer') && typeof d.sdp === 'string' && d.sdp.length < 60_000) {
+        data.description = { type: d.type, sdp: d.sdp };
+      }
+      const c = p?.data?.candidate;
+      if (c && typeof c.candidate === 'string' && c.candidate.length < 2000) {
+        data.candidate = {
+          candidate: c.candidate,
+          sdpMid: typeof c.sdpMid === 'string' ? c.sdpMid : null,
+          sdpMLineIndex: Number.isInteger(c.sdpMLineIndex) ? c.sdpMLineIndex : null,
+        };
+      }
+      if (data.description || data.candidate) io.to(target).emit('call:signal', { id: r.call.id, data });
+    });
+
+    // Mic and camera on/off, so the other side can show a muted badge or the avatar
+    socket.on('call:media', (p) => {
+      const r = callFor(p);
+      if (!r || r.call.state !== 'active') return;
+      const target = socket.id === r.call.fromSocket ? r.call.toSocket : socket.id === r.call.toSocket ? r.call.fromSocket : null;
+      if (target) io.to(target).emit('call:media', { id: r.call.id, mic: !!p.mic, cam: !!p.cam, screen: !!p.screen });
+    });
+
     socket.on('disconnect', () => {
+      // a closed tab ends the call it was in
+      for (const c of [...calls.values()]) {
+        if (c.state === 'active' && (c.fromSocket === socket.id || c.toSocket === socket.id)) endCall(c, 'dropped');
+        else if (c.state === 'ringing' && c.fromSocket === socket.id) endCall(c, 'cancelled');
+      }
       const user = socket.data.user;
       if (!user) return;
       const left = (connections.get(user.id) || 1) - 1;
       if (left <= 0) {
         connections.delete(user.id);
+        for (const c of [...calls.values()]) if (c.state === 'ringing' && c.to === user.id) endCall(c, 'missed');
         user.lastSeen = Date.now();
         save();
       } else {

@@ -57,7 +57,7 @@ const initial = {
   since: {}, // friend id -> when you became friends
   reqTs: {}, // user id -> when a pending request was sent
   blocked: [], // [{ id, name, color }] people you blocked
-  privacy: { requests: 'everyone', showOnline: true, dms: 'everyone', readReceipts: true },
+  privacy: { requests: 'everyone', showOnline: true, dms: 'everyone', readReceipts: true, calls: true },
   dms: [], // message threads: { id, other, incoming, state: 'pending' | 'accepted', left }
   reads: {}, // dm id -> when the other person last read it (only while read receipts are on)
   messages: {}, // conversationId -> message[]
@@ -72,7 +72,7 @@ const initial = {
 const newestTs = (list) => (list?.length ? Math.max(...list.map((m) => m.ts || 0)) : 0);
 const countUnread = (list, since, meId, hidden = []) =>
   (list || []).filter(
-    (m) => m.ts > since && m.user.id !== meId && !m.deleted && !m.pending && !m.system && !hidden.includes(m.user.id)
+    (m) => m.ts > since && m.user.id !== meId && !m.deleted && !m.pending && (!m.system || m.missed) && !hidden.includes(m.user.id)
   ).length;
 
 function reducer(s, a) {
@@ -222,7 +222,7 @@ function reducer(s, a) {
       const mine = m.user.id === s.me?.id;
       const hidden = s.blocked.some((b) => b.id === m.user.id);
       const unread =
-        !mine && !hidden && !QUIET_ROOMS.includes(m.room) && m.room !== s.active
+        !mine && !hidden && !m.quiet && !QUIET_ROOMS.includes(m.room) && m.room !== s.active
           ? { ...s.unread, [m.room]: (s.unread[m.room] || 0) + 1 }
           : s.unread;
       const roomTyping = { ...(s.typing[m.room] || {}) };

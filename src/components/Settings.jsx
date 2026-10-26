@@ -717,6 +717,9 @@ function PrivacySection({ privacy, onPrivacy, blocked, onUnblock }) {
         <Row title="Read receipts" desc="Show “Seen” in direct messages. It works both ways: if you turn it off, you won’t see theirs either.">
           <Switch label="Read receipts" checked={privacy.readReceipts !== false} onChange={(v) => onPrivacy({ readReceipts: v })} />
         </Row>
+        <Row title="Calls" desc="Let people you can message ring you for voice and video calls. Turn it off and calls to you show as unavailable.">
+          <Switch label="Allow calls" checked={privacy.calls !== false} onChange={(v) => onPrivacy({ calls: v })} />
+        </Row>
         <Row title="Friend requests" desc="Who can send you new friend requests. Anyone who already asked you can still be accepted." stack>
           <Segmented
             label="Who can send friend requests"
@@ -781,7 +784,7 @@ function DataSection({ savedCount, onClearDrafts, onClearSaved, onReset }) {
 /* ---------- dialog ---------- */
 
 export default function Settings({
-  me, appearance, prefs, savedCount = 0, blocked = [], privacy = { requests: 'everyone', showOnline: true, dms: 'everyone', readReceipts: true }, initialSection = 'profile', onPrivacy, onUnblock,
+  me, appearance, prefs, savedCount = 0, blocked = [], privacy = { requests: 'everyone', showOnline: true, dms: 'everyone', readReceipts: true, calls: true }, initialSection = 'profile', onPrivacy, onUnblock,
   onAppearance, onColor, onStatus, onProfile, onPrefs, onChangePassword, onLogout,
   onClearDrafts, onClearSaved, onReset, onClose,
 }) {

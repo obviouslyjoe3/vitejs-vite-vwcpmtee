@@ -15,6 +15,8 @@ import ShortcutsDialog from './components/ShortcutsDialog.jsx';
 import Logo from './components/Logo.jsx';
 import { QUIET_ROOMS, MAX_REQUEST_MSGS } from './constants.js';
 import Toaster from './components/Toaster.jsx';
+import CallOverlay from './components/CallOverlay.jsx';
+import { useCall } from './useCall.js';
 import Confetti from './components/Confetti.jsx';
 import { toast, confetti } from './toast.js';
 import { loadReminders, saveReminders } from './reminders.js';
@@ -103,6 +105,10 @@ export default function App() {
   }, []);
 
   const p = useParley({ onIncoming, onFriendRequest, onDmRequest, onDmAccepted });
+  const calls = useCall({
+    getPrefs: () => live.current.prefs,
+    isSilenced: () => alertsSilenced(live.current.prefs),
+  });
   const blockedIds = useMemo(() => p.blocked.map((b) => b.id), [p.blocked]);
   // message requests: threads from people who are not your friends yet
   const incomingThreads = useMemo(() => p.dms.filter((t) => t.incoming && t.state === 'pending'), [p.dms]);
@@ -632,6 +638,8 @@ export default function App() {
         onMembers={p.roomMembers}
         onLeaveRoom={p.leaveRoom}
         onOpenSaved={(item) => select(item.room, item.id)}
+        onCall={calls.start}
+        callBusy={!!calls.call}
         onStar={() => togglePref('starred', p.active)}
         onMute={() => togglePref('muted', p.active)}
         onSetTopic={p.setTopic}
@@ -766,6 +774,19 @@ export default function App() {
         <ForwardDialog msg={forwardMsg} rooms={p.rooms} people={forwardPeople} onPick={forwardTo} onClose={() => setForwardMsg(null)} />
       )}
       {keysOpen && <ShortcutsDialog onClose={() => setKeysOpen(false)} />}
+      <CallOverlay
+        call={calls.call}
+        remote={calls.remote}
+        self={calls.self}
+        onAccept={calls.accept}
+        onDecline={calls.decline}
+        onHangup={calls.hangup}
+        onMic={calls.toggleMic}
+        onCam={calls.toggleCam}
+        onShare={calls.startShare}
+        onStopShare={calls.stopShare}
+        onMinimize={calls.setMinimized}
+      />
       <Toaster />
       <Confetti />
       {quickOpen && (

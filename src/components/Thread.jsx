@@ -32,7 +32,7 @@ export default function Thread({
   hiddenCount = 0, onManageBlocked, onUnblock,
   seenAt = 0, onForward, onAcceptRequest, onDeclineRequest, onBlockUser,
   sendKey = 'enter', shortcodes = true, spellcheck = true,
-  reminders = {}, onRemind,
+  reminders = {}, onRemind, onCall, callBusy = false,
 }) {
   const scroller = useRef(null);
   const stick = useRef(true);
@@ -258,6 +258,16 @@ export default function Thread({
             </p>
           </div>
           <div className="head-tools">
+            {conv.kind === 'dm' && conv.dmMode === 'open' && onCall && (
+              <>
+                <button className="tool call-tool" onClick={() => onCall(conv.user, false)} disabled={callBusy || offline || !conv.user.online} aria-label={`Voice call ${conv.title}`} title={!conv.user.online ? `${conv.title} is offline` : callBusy ? 'You are in a call' : 'Voice call'}>
+                  <Icon name="phone" />
+                </button>
+                <button className="tool call-tool" onClick={() => onCall(conv.user, true)} disabled={callBusy || offline || !conv.user.online} aria-label={`Video call ${conv.title}`} title={!conv.user.online ? `${conv.title} is offline` : callBusy ? 'You are in a call' : 'Video call'}>
+                  <Icon name="video" />
+                </button>
+              </>
+            )}
             <button className={`tool ${starred ? 'lit' : ''}`} onClick={onStar} aria-pressed={starred} aria-label={starred ? 'Remove star' : 'Star conversation'} title={starred ? 'Remove star' : 'Star'}>
               <Icon name="star" />
             </button>
